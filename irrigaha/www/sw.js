@@ -1,12 +1,10 @@
-const CACHE_NAME = 'irrigaha-v2';
+const CACHE_NAME = 'irrigaha-v1';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
   './icons/icon-192.png',
-  './icons/icon-512.png',
-  './vendor/three.min.js',
-  './vendor/OrbitControls.js'
+  './icons/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
