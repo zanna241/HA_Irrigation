@@ -1,0 +1,28 @@
+# Manifest dell'add-on per Home Assistant OS / Supervised.
+# Documentazione campi: https://developers.home-assistant.io/docs/add-ons/configuration
+name: "IrrigaHA — Irrigazione"
+version: "1.0.0"
+slug: "irrigaha"
+description: "Editor a mappa e regia dell'irrigazione (zone, pompa, timer, meteo) collegata a Home Assistant"
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: application
+boot: auto
+init: false
+
+# Ingress = l'add-on appare integrato nella UI di HA (sidebar) senza porte esposte manualmente
+# e senza problemi di CORS quando l'URL Home Assistant configurato nell'app coincide con
+# l'origine da cui la pagina viene aperta.
+ingress: true
+ingress_port: 80
+panel_icon: mdi:sprinkler-variant
+panel_title: Irrigazione
+
+# Nessuna opzione di configurazione richiesta: tutto (URL/token HA, mappa, zone...)
+# si imposta dalla scheda "Impostazioni" dentro l'app stessa, al primo avvio.
+options: {}
+schema: {}
