@@ -37,3 +37,20 @@
 - Database ripulito: mantenuti solo link ufficiali verificati.
 - Sequenza sicura: valvola, ritardo, pompa in avvio; pompa, ritardo, valvola in arresto.
 - Ritardo configurabile applicato a Home, manuale, timer, emergenza e YAML Home Assistant.
+# 1.4.0
+
+- Database vegetazione con prati, ortaggi, aromatiche, ornamentali, siepi e fruttiferi.
+- Profili FAO-56/WUCOLS con Kc, radici, umidità obiettivo, fonte e affidabilità.
+- Profili personalizzati e selezione della coltura per ogni zona.
+- Parametri zona: superficie, efficienza, esposizione, densità e nuovo impianto.
+- Bilancio idrico in mm, litri e minuti basato su ET₀, pioggia e portata.
+- Registro apporti e feedback poco/corretto/troppo irrigato sulle ultime 24 ore.
+- Orari multipli configurabili per i controlli giornalieri.
+# 1.5.0
+
+- Esportazione di un pacchetto Home Assistant persistente invece della singola automazione.
+- Rivalutazioni multiple giornaliere configurabili con piano minuti salvato per ogni zona.
+- Ultima rivalutazione automatica immediatamente prima dell'irrigazione.
+- Piano calcolato con previsione pioggia, temperatura, umidità, ET₀, coltura e sensore suolo.
+- Registro persistente dell'ultima irrigazione per evitare doppie esecuzioni nella stessa giornata.
+- Sequenza idraulica sicura mantenuta nel pacchetto e spegnimento protetto al riavvio di HA.

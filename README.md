@@ -10,8 +10,18 @@ runtime: tutto (interfaccia, libreria 3D, icone) è servito dalla tua istanza Ho
 tua rete. L'unica connessione di rete che l'app fa è verso la tua istanza HA, dal browser del tuo
 dispositivo.
 
-La versione 1.3.0 aggiunge dimensionamento metrico iniziale, righelli, misura dinamica dei
-segmenti e una sequenza idraulica protetta con ritardo configurabile fra valvole e pompa.
+La versione 1.5.0 aggiunge rivalutazioni multiple persistenti in Home Assistant, piano salvato per
+zona, verifica pre-avvio e protezione dalle doppie irrigazioni giornaliere.
+
+Il file generato dalla scheda Automatico va salvato come `/config/packages/irrigaha.yaml`. In
+`configuration.yaml` deve essere presente:
+
+```yaml
+homeassistant:
+  packages: !include_dir_named packages
+```
+
+Prima del riavvio usare sempre il controllo configurazione di Home Assistant.
 
 - 🏠 **Home**: dashboard con anteprima 3D animata del giardino, meteo, stato zone e stop rapido
 - 🗺️ **Editor a mappa**: aree tipizzate (prato/ghiaia/terra/aiuola), irrigatori con gittata/arco/

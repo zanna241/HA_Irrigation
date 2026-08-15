@@ -450,11 +450,13 @@ a{color:var(--water);}
           <label>Giorni attivi</label>
           <div class="row" id="autoDays"></div>
         </div>
+        <div class="field"><label>Orari controlli giornalieri (separati da virgola)</label><input type="text" id="autoCheckTimes" value="05:00, 14:00, 21:00"><div class="help">Il pacchetto HA salva i minuti di ogni zona a questi orari ed esegue un'ultima rivalutazione immediatamente prima dell'avvio.</div></div>
         <hr class="sep">
         <div class="row">
           <button class="primary" id="btnRunAutoCheck">🔍 Verifica adesso</button>
-          <button id="btnExportYaml">⬇ Genera automazione HA (YAML)</button>
+          <button id="btnExportYaml">⬇ Genera pacchetto HA persistente</button>
         </div>
+        <p class="help">Installazione: salva il file come <code>/config/packages/irrigaha.yaml</code>; in <code>configuration.yaml</code>, sotto <code>homeassistant:</code>, aggiungi <code>packages: !include_dir_named packages</code>. Poi verifica la configurazione e riavvia HA.</p>
       </div>
 
       <div class="card">
@@ -468,6 +470,8 @@ a{color:var(--water);}
           <label>Salta zona se umidità suolo &gt; (%)</label>
           <input type="number" id="autoSoilThreshold" value="55" min="0" max="100">
         </div>
+        <div class="field-row"><div class="field"><label>ET₀ giornaliera di riserva (mm)</label><input type="number" id="autoEtoFallback" min="0" max="15" step="0.1" value="4"></div><div class="field"><label>Pioggia efficace ultime 24 h (mm)</label><input type="number" id="autoEffectiveRain" min="0" max="300" step="0.1" value="0"></div></div>
+        <div id="waterPlan" style="margin-top:12px;"><div class="empty">Esegui una verifica per calcolare il bilancio idrico delle zone.</div></div>
         <hr class="sep">
         <h3>Log verifiche</h3>
         <div id="autoLog"><div class="empty">Nessuna verifica eseguita ancora.</div></div>
@@ -509,6 +513,11 @@ a{color:var(--water);}
           <tbody id="driplineModelTableBody"></tbody>
         </table>
       </div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="section-title"><h3>Database vegetazione e fabbisogno idrico</h3><button class="primary sm" id="btnAddPlant">+ Profilo personalizzato</button></div>
+      <p class="help">Profili FAO-56 per colture/tappeti erbosi e classi WUCOLS per ornamentali. 1 mm su 1 m² equivale a 1 litro. Ogni dato riporta fonte e affidabilità.</p>
+      <div style="overflow:auto"><table><thead><tr><th>Categoria</th><th>Nome</th><th>Specie / varietà</th><th>Kc</th><th>Radici (m)</th><th>Umidità obiettivo</th><th>Fonte</th><th>Aff.</th><th></th></tr></thead><tbody id="plantTableBody"></tbody></table></div>
     </div>
   </div>
 
@@ -576,7 +585,7 @@ a{color:var(--water);}
    chiaro quale build è effettivamente in esecuzione (utile per
    verificare che un aggiornamento dell'add-on sia andato a buon fine).
    ============================================================ */
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.5.0';
 
 const uid = () => Math.random().toString(36).slice(2,10);
 
@@ -588,14 +597,14 @@ const DEFAULT_STATE = {
   driplines: [],   // {id,name,points:[[x,y]...],modelId,variantId,zoneId}
   decor: [],       // {id,x,y,kind('albero'|'siepe'|'cespuglio'|'pianta'),size,name}
   sensors: [],     // {id,x,y,kind,name,entityId}
-  zones: [],       // {id,name,color,relayEntity,pressureBar}
+  zones: [],       // include profilo vegetale e parametri agronomici
   pump: {relayEntity:'', maxFlowLmin:60, maxPressureBar:4, flowSensorEntity:'', valvePumpDelaySec:2},
   timers: {},      // zoneId -> minutes
   auto: {enabled:false, weatherEntity:'', rainSensor:'', rainThreshold:60, startTime:'06:00',
          days:{lun:true,mar:true,mer:true,gio:true,ven:true,sab:true,dom:true},
-         tempLow:15, tempHigh:28, soilThreshold:55},
+         tempLow:15, tempHigh:28, soilThreshold:55, etoFallback:4, effectiveRainMm:0, checkTimes:['05:00','14:00','21:00']},
   ha: {baseUrl:'', token:''},
-  customModels: []
+  customModels: [], customPlants: [], waterLedger: []
 };
 
 let state = structuredClone(DEFAULT_STATE);
@@ -715,6 +724,36 @@ const PRESET_DRIPLINES = [
     ]},
 ];
 
+/* Profili agronomici. Kc e radici sono valori iniziali da affinare con clima e sensori locali. */
+const PLANT_PROFILES = [
+ {id:'grass-cool',category:'Prato',name:'Prato microterme',scientific:'Lolium / Poa / Festuca',kc:.80,rootDepth:.20,targetMoisture:55,source:'FAO-56 / UC ANR',confidence:'A'},
+ {id:'grass-festuca',category:'Prato',name:'Festuca arundinacea',scientific:'Festuca arundinacea',kc:.70,rootDepth:.30,targetMoisture:50,source:'FAO-56 / UC ANR',confidence:'B'},
+ {id:'grass-rye',category:'Prato',name:'Loietto perenne',scientific:'Lolium perenne',kc:.80,rootDepth:.20,targetMoisture:58,source:'FAO-56',confidence:'B'},
+ {id:'grass-poa',category:'Prato',name:'Poa pratensis',scientific:'Poa pratensis',kc:.80,rootDepth:.20,targetMoisture:58,source:'FAO-56',confidence:'B'},
+ {id:'grass-bermuda',category:'Prato',name:'Gramigna / Bermuda',scientific:'Cynodon dactylon',kc:.60,rootDepth:.40,targetMoisture:45,source:'FAO-56 / UC ANR',confidence:'A'},
+ {id:'grass-zoysia',category:'Prato',name:'Zoysia',scientific:'Zoysia spp.',kc:.55,rootDepth:.35,targetMoisture:45,source:'WUCOLS adattato',confidence:'B'},
+ {id:'grass-dichondra',category:'Prato',name:'Dicondra',scientific:'Dichondra repens',kc:.65,rootDepth:.20,targetMoisture:55,source:'WUCOLS adattato',confidence:'C'},
+ {id:'tomato',category:'Orto',name:'Pomodoro',scientific:'Solanum lycopersicum',kc:1.15,rootDepth:.70,targetMoisture:60,source:'FAO-56',confidence:'A'},
+ {id:'pepper',category:'Orto',name:'Peperone',scientific:'Capsicum annuum',kc:1.05,rootDepth:.60,targetMoisture:62,source:'FAO-56',confidence:'A'},
+ {id:'lettuce',category:'Orto',name:'Lattuga',scientific:'Lactuca sativa',kc:1.00,rootDepth:.30,targetMoisture:65,source:'FAO-56',confidence:'A'},
+ {id:'potato',category:'Orto',name:'Patata',scientific:'Solanum tuberosum',kc:1.15,rootDepth:.60,targetMoisture:60,source:'FAO-56',confidence:'A'},
+ {id:'zucchini',category:'Orto',name:'Zucchina',scientific:'Cucurbita pepo',kc:1.00,rootDepth:.60,targetMoisture:60,source:'FAO-56 gruppo cucurbitacee',confidence:'B'},
+ {id:'basil',category:'Aromatica',name:'Basilico',scientific:'Ocimum basilicum',kc:.90,rootDepth:.30,targetMoisture:60,source:'Profilo orticolo derivato',confidence:'C'},
+ {id:'rosemary',category:'Aromatica',name:'Rosmarino',scientific:'Salvia rosmarinus',kc:.30,rootDepth:.60,targetMoisture:35,source:'WUCOLS adattato',confidence:'B'},
+ {id:'lavender',category:'Ornamentale',name:'Lavanda',scientific:'Lavandula spp.',kc:.30,rootDepth:.50,targetMoisture:35,source:'WUCOLS adattato',confidence:'B'},
+ {id:'hydrangea',category:'Ornamentale',name:'Ortensia',scientific:'Hydrangea macrophylla',kc:.70,rootDepth:.45,targetMoisture:60,source:'WUCOLS adattato',confidence:'B'},
+ {id:'rose',category:'Ornamentale',name:'Rosa',scientific:'Rosa spp.',kc:.60,rootDepth:.60,targetMoisture:50,source:'WUCOLS adattato',confidence:'B'},
+ {id:'olive',category:'Albero',name:'Olivo',scientific:'Olea europaea',kc:.45,rootDepth:1.20,targetMoisture:35,source:'FAO-56',confidence:'A'},
+ {id:'apple',category:'Frutteto',name:'Melo',scientific:'Malus domestica',kc:.90,rootDepth:1.00,targetMoisture:50,source:'FAO-56',confidence:'A'},
+ {id:'citrus',category:'Frutteto',name:'Agrumi',scientific:'Citrus spp.',kc:.70,rootDepth:.90,targetMoisture:55,source:'FAO-56',confidence:'A'},
+ {id:'grape',category:'Frutteto',name:'Vite',scientific:'Vitis vinifera',kc:.70,rootDepth:1.20,targetMoisture:45,source:'FAO-56',confidence:'A'},
+ {id:'hedge-low',category:'Siepe',name:'Siepe mediterranea',scientific:'Specie miste xerofile',kc:.35,rootDepth:.70,targetMoisture:40,source:'WUCOLS classe bassa',confidence:'C'},
+ {id:'ornamental-medium',category:'Ornamentale',name:'Aiuola mista media esigenza',scientific:'Specie miste',kc:.55,rootDepth:.40,targetMoisture:50,source:'WUCOLS classe media',confidence:'C'}
+];
+function allPlants(){return [...PLANT_PROFILES,...state.customPlants]}
+function plantById(id){return allPlants().find(p=>p.id===id)||PLANT_PROFILES[0]}
+function plantSourceUrl(p){if((p.source||'').includes('FAO'))return 'https://www.fao.org/4/x0490e/x0490e0b.htm';if((p.source||'').includes('WUCOLS'))return 'https://wucols.ucdavis.edu/plant-search-database';return ''}
+
 function allModels(){ return [...PRESET_MODELS, ...state.customModels.filter(m=>m.type!=='dripline')]; }
 function getModel(id){ return allModels().find(m=>m.id===id); }
 function allDriplineModels(){ return [...PRESET_DRIPLINES, ...state.customModels.filter(m=>m.type==='dripline')]; }
@@ -740,6 +779,7 @@ async function loadState(){
       if(!parsed.state.plot && (state.areas.length||state.sprinklers.length||state.driplines.length||state.decor.length||state.sensors.length)) state.plot.configured=true;
       state.auto = Object.assign(structuredClone(DEFAULT_STATE.auto), parsed.state.auto||{});
       state.ha = Object.assign(structuredClone(DEFAULT_STATE.ha), parsed.state.ha||{});
+      state.customPlants = parsed.state.customPlants||[]; state.waterLedger=parsed.state.waterLedger||[];
     }
   }catch(e){ /* no saved state yet */ }
 }
@@ -844,7 +884,7 @@ document.getElementById('tabs').addEventListener('click', e=>{
   document.getElementById('view-'+btn.dataset.view).classList.add('active');
   if(btn.dataset.view==='controllo') renderManualControl();
   if(btn.dataset.view==='timer') renderTimer();
-  if(btn.dataset.view==='db'){ renderModelTable(); renderDriplineModelTable(); }
+  if(btn.dataset.view==='db'){ renderModelTable(); renderDriplineModelTable(); renderPlantTable(); }
   if(btn.dataset.view==='mappa') drawMap();
 });
 
@@ -1641,7 +1681,7 @@ function renderLegend(){
    ============================================================ */
 document.getElementById('btnAddZone').onclick = ()=>{
   const color = ZONE_COLORS[state.zones.length % ZONE_COLORS.length];
-  state.zones.push({id:uid(), name:'Zona '+(state.zones.length+1), color, relayEntity:'', pressureBar:3});
+  state.zones.push({id:uid(), name:'Zona '+(state.zones.length+1), color, relayEntity:'', pressureBar:3,plantProfileId:'grass-cool',areaM2:50,irrigationEfficiency:.75,exposure:1,density:1,establishment:1});
   renderZones(); renderLegend(); queueSave();
 };
 function renderZones(){
@@ -1683,6 +1723,12 @@ function renderZones(){
         </div>
         <div class="field"><label>Colore</label><input type="text" data-zid="${z.id}" class="zColor" value="${z.color}"></div>
       </div>
+      <div class="field-row3">
+        <div class="field"><label>Vegetazione / coltura</label><select data-zid="${z.id}" class="zPlant">${allPlants().map(p=>`<option value="${p.id}" ${p.id===(z.plantProfileId||'grass-cool')?'selected':''}>${escapeHtml(p.category+' — '+p.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Superficie irrigata (m²)</label><input type="number" min="0.1" step="0.1" data-zid="${z.id}" class="zArea" value="${z.areaM2||50}"></div>
+        <div class="field"><label>Efficienza impianto (%)</label><input type="number" min="20" max="100" data-zid="${z.id}" class="zEfficiency" value="${Math.round((z.irrigationEfficiency||.75)*100)}"></div>
+      </div>
+      <div class="field-row3"><div class="field"><label>Esposizione</label><select data-zid="${z.id}" class="zExposure"><option value="0.8" ${(z.exposure||1)==.8?'selected':''}>Ombra</option><option value="0.9" ${(z.exposure||1)==.9?'selected':''}>Mezz'ombra</option><option value="1" ${(z.exposure||1)==1?'selected':''}>Sole</option><option value="1.15" ${(z.exposure||1)==1.15?'selected':''}>Sole/caldo intenso</option></select></div><div class="field"><label>Densità vegetazione</label><select data-zid="${z.id}" class="zDensity"><option value="0.8" ${(z.density||1)==.8?'selected':''}>Bassa</option><option value="1" ${(z.density||1)==1?'selected':''}>Normale</option><option value="1.15" ${(z.density||1)==1.15?'selected':''}>Alta</option></select></div><div class="field"><label>Stato impianto</label><select data-zid="${z.id}" class="zEst"><option value="1" ${(z.establishment||1)==1?'selected':''}>Stabilizzato</option><option value="1.25" ${(z.establishment||1)==1.25?'selected':''}>Nuovo impianto</option></select></div></div>
       <div class="small muted">Portata stimata zona: ${flow.toFixed(1)} l/min di ${state.pump.maxFlowLmin} l/min pompa</div>
       <div class="flow-bar"><div style="width:${pct}%;background:${over?'linear-gradient(90deg,#e0a83a,#e0645a)':''}"></div></div>
       <div class="small muted" style="margin-top:6px;">📍 ${inAreas.length ? 'Si trova su: '+escapeHtml(inAreas.join(', ')) : "Nessun irrigatore/tubo di questa zona è posizionato sopra un'area disegnata"}</div>
@@ -1692,6 +1738,12 @@ function renderZones(){
   wrap.querySelectorAll('.zEntity').forEach(sel=> sel.onchange = e=>{ zoneById(e.target.dataset.zid).relayEntity=e.target.value; queueSave(); });
   wrap.querySelectorAll('.zPressure').forEach(inp=> inp.oninput = e=>{ zoneById(e.target.dataset.zid).pressureBar=parseFloat(e.target.value)||3; renderZones(); queueSave(); });
   wrap.querySelectorAll('.zColor').forEach(inp=> inp.oninput = e=>{ zoneById(e.target.dataset.zid).color=e.target.value; renderLegend(); drawMap(); queueSave(); });
+  wrap.querySelectorAll('.zPlant').forEach(el=>el.onchange=e=>{zoneById(e.target.dataset.zid).plantProfileId=e.target.value;queueSave()});
+  wrap.querySelectorAll('.zArea').forEach(el=>el.oninput=e=>{zoneById(e.target.dataset.zid).areaM2=Math.max(.1,parseFloat(e.target.value)||.1);queueSave()});
+  wrap.querySelectorAll('.zEfficiency').forEach(el=>el.oninput=e=>{zoneById(e.target.dataset.zid).irrigationEfficiency=Math.max(.2,Math.min(1,(parseFloat(e.target.value)||75)/100));queueSave()});
+  wrap.querySelectorAll('.zExposure').forEach(el=>el.onchange=e=>{zoneById(e.target.dataset.zid).exposure=parseFloat(e.target.value);queueSave()});
+  wrap.querySelectorAll('.zDensity').forEach(el=>el.onchange=e=>{zoneById(e.target.dataset.zid).density=parseFloat(e.target.value);queueSave()});
+  wrap.querySelectorAll('.zEst').forEach(el=>el.onchange=e=>{zoneById(e.target.dataset.zid).establishment=parseFloat(e.target.value);queueSave()});
   wrap.querySelectorAll('[data-act=del]').forEach(btn=> btn.onclick = e=>{
     const zid = e.target.dataset.zid;
     if(!confirm('Eliminare questa zona? Gli irrigatori assegnati resteranno senza zona.')) return;
@@ -1714,6 +1766,7 @@ document.getElementById('pumpValveDelay').oninput = e=>{ state.pump.valvePumpDel
    ============================================================ */
 let activeZones = new Set(); // zoneIds currently "on" per this app's own tracking
 let pumpOn = false;
+const activeZoneStartedAt=new Map();
 
 async function setPump(on){
   if(state.pump.relayEntity && haConnected){
@@ -1753,10 +1806,13 @@ async function stopZonesSafely(zoneIds){
 async function startZoneManual(zoneId){
   if(pumpOn && activeZones.size) await stopZonesSafely([...activeZones]);
   await startZonesSafely([zoneId]);
+  activeZoneStartedAt.set(zoneId,Date.now());
   renderManualControl();
 }
 async function stopZoneManual(zoneId){
+  const started=activeZoneStartedAt.get(zoneId);
   await stopZonesSafely([zoneId]);
+  if(started)recordWater(zoneId,(Date.now()-started)/60000,'manuale');activeZoneStartedAt.delete(zoneId);
   renderManualControl();
 }
 document.getElementById('btnPumpToggle').onclick = async()=>{ if(pumpOn) await stopZonesSafely([...activeZones]); else toast('Per sicurezza avvia la pompa dal comando di una zona.','err'); renderManualControl(); };
@@ -1826,6 +1882,7 @@ async function runTimerProgram(){
       const mins = state.timers[z.id]??10;
       for(let s=0;s<mins*60 && !timerAbort;s++) await sleep(1000);
       await stopZonesSafely([z.id]);
+      recordWater(z.id,timerAbort?0:mins,'timer');
     }
   } else {
     await startZonesSafely(targets.map(z=>z.id));
@@ -1833,6 +1890,7 @@ async function runTimerProgram(){
     const maxMin = Math.max(...targets.map(z=>state.timers[z.id]??10),0);
     for(let s=0;s<maxMin*60 && !timerAbort;s++) await sleep(1000);
     await stopZonesSafely(targets.map(z=>z.id));
+    if(!timerAbort)targets.forEach(z=>recordWater(z.id,state.timers[z.id]??10,'timer'));
   }
   if(pumpOn||activeZones.size) await stopZonesSafely([...activeZones]);
   timerRunning=false;
@@ -1868,6 +1926,9 @@ function bindAutoFields(){
   document.getElementById('autoTempLow').value = state.auto.tempLow;
   document.getElementById('autoTempHigh').value = state.auto.tempHigh;
   document.getElementById('autoSoilThreshold').value = state.auto.soilThreshold;
+  document.getElementById('autoEtoFallback').value=state.auto.etoFallback;
+  document.getElementById('autoEffectiveRain').value=state.auto.effectiveRainMm;
+  document.getElementById('autoCheckTimes').value=(state.auto.checkTimes||[]).join(', ');
   document.getElementById('autoEnabled').onchange = e=>{ state.auto.enabled=e.target.checked; queueSave(); };
   document.getElementById('autoWeatherEntity').onchange = e=>{ state.auto.weatherEntity=e.target.value; queueSave(); };
   document.getElementById('autoRainSensor').onchange = e=>{ state.auto.rainSensor=e.target.value; queueSave(); };
@@ -1876,6 +1937,9 @@ function bindAutoFields(){
   document.getElementById('autoTempLow').oninput = e=>{ state.auto.tempLow=parseFloat(e.target.value)||0; queueSave(); };
   document.getElementById('autoTempHigh').oninput = e=>{ state.auto.tempHigh=parseFloat(e.target.value)||30; queueSave(); };
   document.getElementById('autoSoilThreshold').oninput = e=>{ state.auto.soilThreshold=parseFloat(e.target.value)||55; queueSave(); };
+  document.getElementById('autoEtoFallback').oninput=e=>{state.auto.etoFallback=Math.max(0,parseFloat(e.target.value)||0);queueSave()};
+  document.getElementById('autoEffectiveRain').oninput=e=>{state.auto.effectiveRainMm=Math.max(0,parseFloat(e.target.value)||0);queueSave()};
+  document.getElementById('autoCheckTimes').onchange=e=>{state.auto.checkTimes=e.target.value.split(',').map(x=>x.trim()).filter(x=>/^([01]\d|2[0-3]):[0-5]\d$/.test(x));e.target.value=state.auto.checkTimes.join(', ');queueSave()};
 }
 function logAuto(msg, kind){
   const wrap = document.getElementById('autoLog');
@@ -1884,6 +1948,25 @@ function logAuto(msg, kind){
   el.className='log-entry '+(kind||'');
   el.textContent = new Date().toLocaleTimeString()+' — '+msg;
   wrap.prepend(el);
+}
+function zoneDeliveredLiters(zoneId,hours=24){
+  const since=Date.now()-hours*3600000;return state.waterLedger.filter(x=>x.zoneId===zoneId&&x.ts>=since).reduce((s,x)=>s+x.liters,0);
+}
+function calculateZoneWater(z,etoMm,rainMm,soilValue=null){
+  const p=plantById(z.plantProfileId),area=Math.max(.1,z.areaM2||50),eff=Math.max(.2,z.irrigationEfficiency||.75);
+  const soilFactor=soilValue==null?1:Math.max(.65,Math.min(1.35,1+(p.targetMoisture-soilValue)/100));
+  const landscape=(z.exposure||1)*(z.density||1)*(z.establishment||1),grossNeed=etoMm*p.kc*landscape*soilFactor;
+  const netMm=Math.max(0,grossNeed-Math.max(0,rainMm||0)),liters=netMm*area/eff,flow=zoneTotalFlow(z.id),minutes=flow>0?liters/flow:0,delivered=zoneDeliveredLiters(z.id);
+  const targetToday=liters,delta=targetToday>0?(delivered-targetToday)/targetToday*100:delivered>0?100:0;
+  const feedback=delivered===0?'non ancora irrigata':delta>20?'troppo irrigata':delta< -20?'poco irrigata':'corretta';
+  return {zone:z,plant:p,netMm,liters,minutes,flow,delivered,delta,feedback};
+}
+function renderWaterPlan(plans){
+  const el=document.getElementById('waterPlan');
+  el.innerHTML=plans.map(x=>x.skip?`<div class="log-entry skip"><b>${escapeHtml(x.zone.name)}</b>: saltata — ${escapeHtml(x.reason)}</div>`:`<div class="card" style="margin:8px 0;padding:10px"><div class="row"><b>${escapeHtml(x.zone.name)}</b><span class="pill">${escapeHtml(x.plant.name)}</span><span class="spacer"></span><span class="pill ${x.feedback==='corretta'?'leaf':x.feedback==='troppo irrigata'?'danger':''}">${x.feedback}</span></div><div class="small muted">Obiettivo ${x.netMm.toFixed(1)} mm · ${Math.round(x.liters)} litri · ${x.flow.toFixed(1)} l/min · ${x.minutes.toFixed(1)} minuti</div><div class="small muted">Erogati nelle ultime 24 h: ${Math.round(x.delivered)} litri${x.delivered?` · scostamento ${x.delta>0?'+':''}${x.delta.toFixed(0)}%`:''} · fonte ${escapeHtml(x.plant.source)} (${x.plant.confidence})</div></div>`).join('')||'<div class="empty">Nessuna zona configurata.</div>';
+}
+function recordWater(zoneId,minutes,source){
+  const liters=Math.max(0,zoneTotalFlow(zoneId)*minutes);if(!liters)return;state.waterLedger.push({ts:Date.now(),zoneId,minutes,liters,source});const cutoff=Date.now()-90*86400000;state.waterLedger=state.waterLedger.filter(x=>x.ts>=cutoff);queueSave();
 }
 async function runAutoCheck(){
   if(!state.auto.enabled){ toast('Attiva prima la modalità automatica','err'); return; }
@@ -1917,63 +2000,147 @@ async function runAutoCheck(){
   factor = Math.max(0.4, Math.min(1.6, factor));
   logAuto('Fattore di correzione durata: ×'+factor.toFixed(2));
 
+  const plans=[];
   for(const z of state.zones){
-    const baseMin = state.timers[z.id] ?? 10;
-    let skip=false, reason='';
+    let skip=false, reason='', soilValue=null;
     for(const se of state.sensors){
       if(se.kind==='umidita_suolo' && se.affectsZoneId===z.id && se.entityId && haConnected){
         const st = await haGetState(se.entityId);
-        const val = st ? parseFloat(st.state) : null;
-        if(val!=null && val >= state.auto.soilThreshold){ skip=true; reason='umidità suolo '+val+'% ≥ soglia '+state.auto.soilThreshold+'%'; }
+        const val = st ? parseFloat(st.state) : null; soilValue=Number.isFinite(val)?val:null;
+        const threshold=Math.max(state.auto.soilThreshold||55,plantById(z.plantProfileId).targetMoisture||0);
+        if(soilValue!=null && soilValue >= threshold){ skip=true; reason='umidità suolo '+soilValue+'% ≥ soglia '+threshold+'%'; }
       }
     }
-    if(skip){ logAuto('Zona "'+z.name+'" saltata: '+reason,'skip'); continue; }
-    const finalMin = Math.max(1, Math.round(baseMin*factor));
-    logAuto('Zona "'+z.name+'" → programmata per '+finalMin+' min (base '+baseMin+' min).','run');
+    if(skip){ logAuto('Zona "'+z.name+'" saltata: '+reason,'skip'); plans.push({zone:z,skip:true,reason}); continue; }
+    const plan=calculateZoneWater(z,(state.auto.etoFallback||4)*factor,state.auto.effectiveRainMm||0,soilValue);plans.push(plan);
+    state.timers[z.id]=Math.max(1,Math.round(plan.minutes));
+    logAuto('Zona "'+z.name+'" → '+plan.netMm.toFixed(1)+' mm, '+Math.round(plan.liters)+' l, '+plan.minutes.toFixed(1)+' min.','run');
   }
+  renderWaterPlan(plans);queueSave();
   logAuto('Verifica completata.');
 }
 document.getElementById('btnRunAutoCheck').onclick = runAutoCheck;
 
 function buildAutomationYaml(){
   const safeDelay=Math.max(0,Number(state.pump.valvePumpDelaySec)||0);
-  const zones = state.zones.map(z=>{
-    const min = state.timers[z.id] ?? 10;
-    return `      - service: switch.turn_on
+  const weather=state.auto.weatherEntity||'weather.METEO_DA_CONFIGURARE', pump=state.pump.relayEntity||'switch.POMPA_DA_CONFIGURARE';
+  const key=z=>'z_'+String(z.id).replace(/[^a-zA-Z0-9_]/g,'_').toLowerCase();
+  const checks=[...new Set((state.auto.checkTimes||['05:00']).filter(x=>/^([01]\d|2[0-3]):[0-5]\d$/.test(x)))];
+  const planHelpers=state.zones.map(z=>`  irrigaha_piano_${key(z)}:\n    name: "IrrigaHA piano ${String(z.name).replace(/"/g,"'")}"\n    min: 0\n    max: 180\n    step: 1\n    unit_of_measurement: min\n    mode: box`).join('\n');
+  const lastHelpers=state.zones.map(z=>`  irrigaha_ultima_${key(z)}:\n    name: "IrrigaHA ultima irrigazione ${String(z.name).replace(/"/g,"'")}"\n    has_date: true\n    has_time: true`).join('\n');
+  const planActions=state.zones.map(z=>{const p=plantById(z.plantProfileId),flow=Math.max(.01,zoneTotalFlow(z.id)),soil=state.sensors.find(s=>s.kind==='umidita_suolo'&&s.affectsZoneId===z.id&&s.entityId),threshold=Math.max(state.auto.soilThreshold||55,p.targetMoisture||0);return `      - action: input_number.set_value
         target:
-          entity_id: ${z.relayEntity || 'switch.ZONA_DA_CONFIGURARE'}
+          entity_id: input_number.irrigaha_piano_${key(z)}
+        data:
+          value: >-
+            {% set soil = ${soil?`states('${soil.entityId}') | float(0)`:'0'} %}
+            {% set wet = ${soil?`soil >= ${threshold}`:'false'} %}
+            {% set mm = [0, ((${Number(state.auto.etoFallback||4)} * temp_factor * ${p.kc} * ${z.exposure||1} * ${z.density||1} * ${z.establishment||1}) - ${Number(state.auto.effectiveRainMm||0)})] | max %}
+            {% set liters = mm * ${Number(z.areaM2||50)} / ${Number(z.irrigationEfficiency||.75)} %}
+            {{ 0 if wet or rain_probability >= ${Number(state.auto.rainThreshold||60)} else ([180, (liters / ${flow}) | round(0)] | min) }}`}).join('\n');
+  const executeZones=state.zones.map(z=>`      - if:
+          - condition: template
+            value_template: >-
+              {{ states('input_number.irrigaha_piano_${key(z)}') | int(0) > 0 and
+                 states('input_datetime.irrigaha_ultima_${key(z)}')[:10] != now().strftime('%Y-%m-%d') }}
+        then:
+          - action: switch.turn_on
+            target:
+              entity_id: ${z.relayEntity||'switch.ZONA_DA_CONFIGURARE'}
+          - delay:
+              seconds: ${safeDelay}
+          - action: switch.turn_on
+            target:
+              entity_id: ${pump}
+          - delay:
+              minutes: "{{ states('input_number.irrigaha_piano_${key(z)}') | int(0) }}"
+          - action: switch.turn_off
+            target:
+              entity_id: ${pump}
+          - delay:
+              seconds: ${safeDelay}
+          - action: switch.turn_off
+            target:
+              entity_id: ${z.relayEntity||'switch.ZONA_DA_CONFIGURARE'}
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.irrigaha_ultima_${key(z)}
+            data:
+              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"`).join('\n');
+  const weekdayNumbers=DAY_KEYS.map((d,i)=>state.auto.days[d]?i+1:null).filter(Boolean).join(', ');
+  return `# Pacchetto Home Assistant generato da IrrigaHA ${APP_VERSION}
+# Salvare come /config/packages/irrigaha.yaml e abilitare packages in configuration.yaml.
+input_number:
+${planHelpers||'  irrigaha_nessuna_zona:\n    min: 0\n    max: 1'}
+
+input_datetime:
+  irrigaha_ultimo_controllo:
+    name: IrrigaHA ultimo controllo
+    has_date: true
+    has_time: true
+${lastHelpers}
+
+script:
+  irrigaha_rivaluta:
+    alias: IrrigaHA - rivaluta fabbisogno
+    mode: restart
+    sequence:
+      - action: weather.get_forecasts
+        target:
+          entity_id: ${weather}
+        data:
+          type: daily
+        response_variable: irrigaha_forecast
+      - variables:
+          rain_probability: "{{ irrigaha_forecast['${weather}'].forecast[0].precipitation_probability | default(0) | float(0) }}"
+          current_temp: "{{ state_attr('${weather}', 'temperature') | float(20) }}"
+          current_humidity: "{{ state_attr('${weather}', 'humidity') | float(50) }}"
+          temp_factor: "{{ [1.6, [0.4, 1 + ((current_temp - 22) / 40) - ((current_humidity - 50) / 200)] | max] | min }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.irrigaha_ultimo_controllo
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+${planActions}
+
+automation:
+  - id: irrigaha_rivalutazioni_multiple
+    alias: IrrigaHA - rivalutazioni multiple
+    mode: restart
+    triggers:
+${checks.map(t=>`      - trigger: time\n        at: "${t}:00"`).join('\n')||'      - trigger: time\n        at: "05:00:00"'}
+    actions:
+      - action: script.irrigaha_rivaluta
+
+  - id: irrigaha_esecuzione_giornaliera
+    alias: IrrigaHA - esecuzione giornaliera
+    mode: single
+    triggers:
+      - trigger: time
+        at: "${state.auto.startTime}:00"
+    conditions:
+      - condition: template
+        value_template: "{{ now().isoweekday() in [${weekdayNumbers||'1, 2, 3, 4, 5, 6, 7'}] }}"
+${state.auto.rainSensor?`      - condition: state\n        entity_id: ${state.auto.rainSensor}\n        state: "off"`:''}
+    actions:
+      - action: script.irrigaha_rivaluta
+      - wait_template: "{{ is_state('script.irrigaha_rivaluta', 'off') }}"
+        timeout: "00:02:00"
+        continue_on_timeout: false
+${executeZones||'      - stop: Nessuna zona configurata'}
+
+  - id: irrigaha_sicurezza_riavvio
+    alias: IrrigaHA - sicurezza al riavvio
+    triggers:
+      - trigger: homeassistant
+        event: start
+    actions:
+      - action: switch.turn_off
+        target:
+          entity_id: ${pump}
       - delay:
           seconds: ${safeDelay}
-      - service: switch.turn_on
-        target:
-          entity_id: ${state.pump.relayEntity || 'switch.POMPA_DA_CONFIGURARE'}
-      - delay: "00:${String(min).padStart(2,'0')}:00"
-      - service: switch.turn_off
-        target:
-          entity_id: ${state.pump.relayEntity || 'switch.POMPA_DA_CONFIGURARE'}
-      - delay:
-          seconds: ${safeDelay}
-      - service: switch.turn_off
-        target:
-          entity_id: ${z.relayEntity || 'switch.ZONA_DA_CONFIGURARE'}`;
-  }).join('\n');
-  return `alias: Irrigazione automatica (generato da IrrigaHA)
-description: Programma di irrigazione con controllo meteo e pioggia
-trigger:
-  - platform: time
-    at: "${state.auto.startTime}:00"
-condition:
-  - condition: state
-    entity_id: ${state.auto.rainSensor || 'binary_sensor.PIOGGIA_DA_CONFIGURARE'}
-    state: "off"
-  - condition: numeric_state
-    entity_id: ${state.auto.weatherEntity || 'weather.METEO_DA_CONFIGURARE'}
-    attribute: precipitation_probability
-    below: ${state.auto.rainThreshold}
-action:
-  - sequence:
-${zones || '      - service: switch.turn_on\n        target:\n          entity_id: switch.ZONA_DA_CONFIGURARE'}
-mode: single
+${state.zones.map(z=>`      - action: switch.turn_off\n        target:\n          entity_id: ${z.relayEntity||'switch.ZONA_DA_CONFIGURARE'}`).join('\n')}
 `;
 }
 document.getElementById('btnExportYaml').onclick = ()=>{
@@ -1981,9 +2148,9 @@ document.getElementById('btnExportYaml').onclick = ()=>{
   const blob = new Blob([yaml], {type:'text/yaml'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href=url; a.download='irrigazione_automazione.yaml'; a.click();
+  a.href=url; a.download='irrigaha_package.yaml'; a.click();
   URL.revokeObjectURL(url);
-  toast('YAML generato — importalo in HA come nuova automazione (modalità YAML) e verifica gli entity_id.','ok');
+  toast('Pacchetto HA generato — salvalo in /config/packages/irrigaha.yaml e verifica gli entity_id.','ok');
 };
 
 /* ============================================================
@@ -2075,6 +2242,17 @@ document.getElementById('btnAddDriplineModel').onclick = ()=>{
   state.customModels.push(m);
   renderDriplineModelTable(); queueSave();
   toast('Tubo gocciolante aggiunto al database','ok');
+};
+
+function renderPlantTable(){
+  const body=document.getElementById('plantTableBody'); if(!body)return;
+  body.innerHTML=allPlants().map(p=>{const u=plantSourceUrl(p);return `<tr><td>${escapeHtml(p.category)}</td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.scientific||'—')}</td><td>${Number(p.kc).toFixed(2)}</td><td>${Number(p.rootDepth).toFixed(2)}</td><td>${p.targetMoisture}%</td><td>${u?`<a href="${u}" target="_blank" rel="noopener">${escapeHtml(p.source)} ↗</a>`:escapeHtml(p.source)}</td><td><span class="pill ${p.confidence==='A'?'leaf':''}">${p.confidence}</span></td><td>${state.customPlants.some(x=>x.id===p.id)?`<button class="danger sm" data-pid="${p.id}">🗑</button>`:''}</td></tr>`}).join('');
+  body.querySelectorAll('[data-pid]').forEach(b=>b.onclick=()=>{state.customPlants=state.customPlants.filter(p=>p.id!==b.dataset.pid);state.zones.forEach(z=>{if(z.plantProfileId===b.dataset.pid)z.plantProfileId='grass-cool'});renderPlantTable();renderZones();queueSave()});
+}
+document.getElementById('btnAddPlant').onclick=()=>{
+  const name=prompt('Nome comune:');if(!name)return;const scientific=prompt('Nome scientifico / varietà:','')||'';const category=prompt('Categoria (Prato, Orto, Aromatica, Ornamentale, Albero, Frutteto, Siepe):','Ornamentale')||'Personalizzata';
+  const kc=Math.max(.05,parseFloat(prompt('Coefficiente idrico Kc/Ks:','0.55'))||.55),rootDepth=Math.max(.1,parseFloat(prompt('Profondità radicale (m):','0.5'))||.5),targetMoisture=Math.max(1,Math.min(100,parseFloat(prompt('Umidità obiettivo (%):','50'))||50));
+  state.customPlants.push({id:'plant-'+uid(),category,name,scientific,kc,rootDepth,targetMoisture,source:'Personalizzato',confidence:'D'});renderPlantTable();renderZones();queueSave();
 };
 
 /* ============================================================
