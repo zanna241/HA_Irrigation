@@ -1,0 +1,2378 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0e1815">
+<meta name="description" content="App a mappa per progettare e comandare l'irrigazione (zone, pompa, timer, automazione meteo) collegata a Home Assistant — 100% locale.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IrrigaHA">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>IrrigaHA — Regia irrigazione per Home Assistant</title>
+<!-- Tutto servito in locale: nessuna chiamata a font o CDN esterni -->
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<style>
+:root{
+  --bg:#0e1815; --bg2:#0a1210;
+  --panel:#132420; --panel2:#183028;
+  --border:#25443a; --border-soft:#1c332b;
+  --text:#eaf3ee; --text-dim:#8fa79c; --text-faint:#5d766c;
+  --water:#3fa6cf; --water-soft:#3fa6cf33;
+  --leaf:#6ec178; --leaf-soft:#6ec17833;
+  --warn:#e0a83a; --warn-soft:#e0a83a2e;
+  --danger:#e0645a; --danger-soft:#e0645a2e;
+  --sand:#cbb27a; --gravel:#9aa39c; --soil:#7a5a3f;
+  --radius:10px;
+  --font-display: 'Segoe UI', 'Helvetica Neue', Arial, system-ui, sans-serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:radial-gradient(1200px 700px at 20% -10%, #143229 0%, var(--bg) 55%), var(--bg);
+  color:var(--text);
+  font-family:var(--font-body);
+  min-height:100vh;
+}
+h1,h2,h3{font-family:var(--font-display);font-weight:700;margin:0 0 4px 0; letter-spacing:.2px;}
+code,.mono,input,select,textarea,table{font-family:var(--font-mono);}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+
+/* ---------- Shell ---------- */
+.shell{max-width:1360px;margin:0 auto;padding:22px 22px 60px;}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(145deg,var(--leaf),var(--water));display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 6px 18px -6px #3fa6cf66;}
+.brand h1{font-size:19px;color:var(--text);}
+.brand p{margin:0;font-size:12px;color:var(--text-dim);}
+.ha-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);background:var(--panel);border:1px solid var(--border);padding:7px 12px;border-radius:999px;}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--text-faint);}
+.dot.on{background:var(--leaf);box-shadow:0 0 8px 1px #6ec17888;}
+.dot.off{background:var(--danger);}
+
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;border-bottom:1px solid var(--border-soft);padding-bottom:0;}
+.tab-btn{background:none;border:none;color:var(--text-dim);font-family:var(--font-display);font-size:13.5px;font-weight:600;padding:10px 15px;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:7px;transition:.15s;}
+.tab-btn:hover{color:var(--text);}
+.tab-btn.active{color:var(--leaf);border-bottom-color:var(--leaf);}
+.view{display:none;animation:fade .2s ease;}
+.view.active{display:block;}
+@keyframes fade{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
+
+.card{background:var(--panel);border:1px solid var(--border-soft);border-radius:var(--radius);padding:16px;}
+.grid{display:grid;gap:16px;}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.spacer{flex:1;}
+.small{font-size:12px;color:var(--text-dim);}
+.muted{color:var(--text-dim);}
+.pill{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--border);color:var(--text-dim);}
+.pill.leaf{color:var(--leaf);border-color:#6ec17855;background:var(--leaf-soft);}
+.pill.warn{color:var(--warn);border-color:#e0a83a55;background:var(--warn-soft);}
+.pill.danger{color:var(--danger);border-color:#e0645a55;background:var(--danger-soft);}
+.pill.water{color:var(--water);border-color:#3fa6cf55;background:var(--water-soft);}
+
+label{font-size:11.5px;color:var(--text-dim);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;}
+input[type=text],input[type=number],input[type=password],input[type=time],select,textarea{
+  width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);
+  padding:8px 10px;border-radius:7px;font-size:13px;outline:none;transition:.15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--water);}
+input[type=range]{accent-color:var(--leaf);width:100%;}
+.field{margin-bottom:10px;}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.field-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+
+button{cursor:pointer;font-family:var(--font-body);border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);padding:8px 14px;font-size:13px;font-weight:500;transition:.15s;}
+button:hover{border-color:var(--water);}
+button.primary{background:linear-gradient(145deg,#4fb85f,#3a9a68);border:none;color:#08150d;font-weight:700;}
+button.primary:hover{filter:brightness(1.08);}
+button.water{background:linear-gradient(145deg,#4bb4dd,#2f88ab);border:none;color:#04181e;font-weight:700;}
+button.ghost{background:transparent;}
+button.danger{background:var(--danger-soft);border-color:#e0645a55;color:#ffb3ac;}
+button.sm{padding:5px 10px;font-size:12px;}
+button:disabled{opacity:.4;cursor:not-allowed;}
+button.icon{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;font-size:15px;}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{text-align:left;color:var(--text-dim);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10.5px;letter-spacing:.4px;}
+td{padding:8px 10px;border-bottom:1px solid var(--border-soft);vertical-align:middle;}
+tr:hover td{background:#ffffff05;}
+
+.toast-wrap{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:8px;z-index:999;}
+.toast{background:var(--panel2);border:1px solid var(--border);padding:10px 14px;border-radius:8px;font-size:12.5px;max-width:340px;box-shadow:0 8px 24px -8px #000a;}
+.toast.err{border-color:#e0645a66;color:#ffb3ac;}
+.toast.ok{border-color:#6ec17866;color:#bdf0c4;}
+
+/* ---------- Map view ---------- */
+.map-layout{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;}
+.map-toolbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+.map-toolbar button{display:flex;align-items:center;gap:6px;}
+.map-toolbar button.active{border-color:var(--leaf);color:var(--leaf);background:var(--leaf-soft);}
+.toggle3d{margin-bottom:10px;}
+.toggle3d button.active{border-color:var(--water);color:var(--water);background:var(--water-soft);}
+#canvas3dWrap{position:relative;height:420px;cursor:grab;}
+#canvas3dWrap:active{cursor:grabbing;}
+#canvas3dWrap canvas{width:100%!important;height:100%!important;display:block;}
+.hint3d{position:absolute;top:10px;left:10px;background:#0009;border:1px solid #ffffff22;padding:6px 10px;border-radius:7px;font-size:11.5px;color:#d7e6df;pointer-events:none;}
+.canvas-wrap{position:relative;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:
+   linear-gradient(#132420,#0f1e19);}
+canvas{display:block;width:100%;cursor:crosshair;touch-action:none;}
+.map-hint{position:absolute;top:10px;left:10px;background:#0009;border:1px solid #ffffff22;padding:6px 10px;border-radius:7px;font-size:11.5px;color:#d7e6df;pointer-events:none;}
+.side-panel h3{font-size:13.5px;margin-bottom:10px;}
+.legend{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);}
+.swatch{width:11px;height:11px;border-radius:3px;flex:none;}
+
+/* misc */
+.empty{padding:30px 10px;text-align:center;color:var(--text-faint);font-size:13px;}
+.section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.help{font-size:12px;color:var(--text-faint);line-height:1.5;margin-top:6px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.badge-count{background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:1px 8px;font-size:11px;color:var(--text-dim);}
+hr.sep{border:none;border-top:1px solid var(--border-soft);margin:14px 0;}
+a{color:var(--water);}
+.zone-tag{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;border:1px solid var(--border);}
+.flow-bar{height:6px;border-radius:4px;background:var(--bg2);overflow:hidden;margin-top:6px;}
+.flow-bar>div{height:100%;background:linear-gradient(90deg,var(--water),var(--leaf));}
+.timer-list{display:flex;flex-direction:column;gap:8px;}
+.timer-row{display:grid;grid-template-columns:22px 1fr 90px 90px;gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--border-soft);padding:8px 10px;border-radius:8px;}
+.log-entry{border-left:3px solid var(--border);padding:6px 10px;font-size:12.5px;color:var(--text-dim);margin-bottom:6px;}
+.log-entry.skip{border-color:var(--warn);}
+.log-entry.run{border-color:var(--leaf);}
+.log-entry.err{border-color:var(--danger);}
+@media(max-width:920px){
+  .map-layout{grid-template-columns:1fr;}
+  .two-col{grid-template-columns:1fr;}
+  .field-row,.field-row3{grid-template-columns:1fr;}
+}
+
+/* ---------- Home dashboard ---------- */
+#screen-home{display:none;}
+#screen-home.active{display:block;}
+#screen-manage{display:none;}
+#screen-manage.active{display:block;}
+.home-topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
+.home-hero{position:relative;border:1px solid var(--border-soft);border-radius:16px;overflow:hidden;height:min(58vh,520px);min-height:340px;background:#0a1512;}
+#homeCanvas3dWrap{position:absolute;inset:0;}
+#homeCanvas3dWrap canvas{width:100%!important;height:100%!important;display:block;}
+.home-hero-overlay{position:absolute;left:16px;top:16px;right:16px;display:flex;justify-content:space-between;gap:12px;pointer-events:none;flex-wrap:wrap;}
+.home-hero-overlay>*{pointer-events:auto;}
+.home-empty-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--text-faint);font-size:13px;padding:20px;}
+.glass-card{background:#0d1c17cc;backdrop-filter:blur(6px);border:1px solid #ffffff1a;border-radius:12px;padding:12px 14px;}
+.weather-card{display:flex;align-items:center;gap:12px;min-width:220px;}
+.weather-icon{font-size:30px;line-height:1;}
+.weather-temp{font-family:var(--font-display);font-size:22px;font-weight:700;}
+.weather-meta{font-size:11.5px;color:var(--text-dim);}
+.home-stop-btn{background:linear-gradient(145deg,#e0645a,#b8382e);border:none;color:#fff;font-weight:700;font-size:14px;padding:12px 20px;border-radius:999px;box-shadow:0 8px 22px -8px #e0645a99;display:flex;align-items:center;gap:8px;}
+.home-gear-btn{width:42px;height:42px;border-radius:999px;font-size:18px;display:flex;align-items:center;justify-content:center;padding:0;background:#0d1c17cc;border:1px solid #ffffff1a;}
+.home-bottom{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:14px;}
+.zone-quick{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+.zone-quick-btn{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:10px 12px;border-radius:10px;text-align:left;}
+.zone-quick-btn.on{border-color:var(--leaf);background:var(--leaf-soft);}
+.zone-quick-btn .zq-name{font-weight:600;font-size:12.5px;}
+.zone-quick-btn .zq-state{font-size:10.5px;color:var(--text-dim);}
+.stat-row{display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--border-soft);}
+.stat-row:last-child{border-bottom:none;}
+.back-home-btn{display:flex;align-items:center;gap:6px;}
+
+/* ---------- Area type textures (2D legend swatches) ---------- */
+.swatch.prato{background:linear-gradient(135deg,#4c8a52,#6ec178);}
+.swatch.ghiaia{background:linear-gradient(135deg,#8b9088,#c7cac2);}
+.swatch.terra{background:linear-gradient(135deg,#5c4229,#8a6440);}
+.swatch.aiuola{background:linear-gradient(135deg,#7a5636,#a2c96b);}
+
+/* ---------- Dripline / vegetation toolbar accents ---------- */
+.map-toolbar button[data-tool="dripline"].active{border-color:var(--warn);color:var(--warn);background:var(--warn-soft);}
+.map-toolbar button[data-tool="vegetazione"].active{border-color:#8fe0a0;color:#8fe0a0;background:#8fe0a022;}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ======================================================
+       SCHERMATA HOME — dashboard con mappa 3D, meteo, stop
+       ====================================================== -->
+  <div id="screen-home" class="active">
+    <div class="home-topbar">
+      <div class="brand">
+        <img class="brand-mark" src="icons/icon-192.png" alt="IrrigaHA" style="border-radius:10px;">
+        <div>
+          <h1>IrrigaHA <span class="small muted" id="versionBadgeHome" style="font-weight:400;"></span></h1>
+          <p>Regia irrigazione — tutto in locale, nessun dato esce dalla tua rete</p>
+        </div>
+      </div>
+      <div class="ha-status" id="haStatusBoxHome">
+        <span class="dot off" id="haDotHome"></span>
+        <span id="haStatusTextHome">Home Assistant non connesso</span>
+      </div>
+    </div>
+
+    <div class="home-hero">
+      <div id="homeCanvas3dWrap"></div>
+      <div class="home-empty-hint" id="homeEmptyHint">Nessun elemento sulla mappa ancora.<br>Vai su ⚙️ Impostazioni per disegnare il tuo giardino.</div>
+      <div class="home-hero-overlay">
+        <div class="glass-card weather-card" id="homeWeatherCard" style="display:none;">
+          <div class="weather-icon" id="homeWeatherIcon">🌤️</div>
+          <div>
+            <div class="weather-temp" id="homeWeatherTemp">—°C</div>
+            <div class="weather-meta" id="homeWeatherMeta">—</div>
+          </div>
+        </div>
+        <button class="home-gear-btn" id="btnHomeSettings" title="Impostazioni">⚙️</button>
+      </div>
+      <div class="home-hero-overlay" style="top:auto;bottom:16px;">
+        <span class="pill water glass-card" id="homeFlowPill" style="border:1px solid #ffffff1a;">Portata attiva: 0 l/min</span>
+        <button class="home-stop-btn" id="btnHomeStop">⏻ Arresta tutto</button>
+      </div>
+    </div>
+
+    <div class="home-bottom">
+      <div class="card">
+        <div class="section-title"><h3>Zone</h3><span class="badge-count" id="homeZoneCount">0</span></div>
+        <div class="zone-quick" id="homeZoneQuick"></div>
+      </div>
+      <div class="card">
+        <h3>Stato impianto</h3>
+        <div class="stat-row"><span class="muted">Pompa</span><span id="homeStatPump">spenta</span></div>
+        <div class="stat-row"><span class="muted">Zone attive</span><span id="homeStatZones">0</span></div>
+        <div class="stat-row"><span class="muted">Irrigatori</span><span id="homeStatSprinklers">0</span></div>
+        <div class="stat-row"><span class="muted">Linee gocciolanti</span><span id="homeStatDriplines">0</span></div>
+        <div class="stat-row"><span class="muted">Automatico</span><span id="homeStatAuto">disattivo</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       SCHERMATA GESTIONE — mappa 2D, zone, timer, DB, impostazioni
+       ====================================================== -->
+  <div id="screen-manage">
+
+  <div class="topbar">
+    <div class="brand">
+      <img class="brand-mark" src="icons/icon-192.png" alt="IrrigaHA" style="border-radius:10px;">
+      <div>
+        <h1>IrrigaHA <span class="small muted" id="versionBadgeManage" style="font-weight:400;"></span></h1>
+        <p>Regia irrigazione a mappa — collegata a Home Assistant</p>
+      </div>
+    </div>
+    <button class="ghost back-home-btn" id="btnBackHome">🏠 Home</button>
+    <div class="ha-status" id="haStatusBox">
+      <span class="dot off" id="haDot"></span>
+      <span id="haStatusText">Home Assistant non connesso</span>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab-btn active" data-view="mappa">🗺️ Mappa</button>
+    <button class="tab-btn" data-view="zone">🚿 Zone &amp; Pompa</button>
+    <button class="tab-btn" data-view="controllo">🎛️ Controllo manuale</button>
+    <button class="tab-btn" data-view="timer">⏱️ Timer</button>
+    <button class="tab-btn" data-view="auto">🌦️ Automatico</button>
+    <button class="tab-btn" data-view="db">📘 Database irrigatori</button>
+    <button class="tab-btn" data-view="impostazioni">⚙️ Impostazioni</button>
+  </div>
+
+  <!-- ===================== MAPPA ===================== -->
+  <div class="view active" id="view-mappa">
+    <div class="map-layout">
+      <div>
+        <div class="row toggle3d">
+          <button id="view2DBtn" class="active">🗺️ 2D — modifica</button>
+          <button id="view3DBtn">🧊 3D — anteprima animata</button>
+        </div>
+
+        <div id="canvas2dArea">
+          <div class="map-toolbar">
+            <button data-tool="select" class="active">↖ Seleziona / sposta</button>
+            <button data-tool="area">▱ Disegna area</button>
+            <button data-tool="sprinkler">🌀 Irrigatore</button>
+            <button data-tool="dripline">〰️ Tubo gocciolante</button>
+            <button data-tool="vegetazione">🌳 Albero/siepe/pianta</button>
+            <button data-tool="sensor">📡 Sensore</button>
+            <button data-tool="calibrate">📏 Calibra scala</button>
+            <span class="spacer"></span>
+            <button id="btnClearMap" class="danger sm">Svuota mappa</button>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="mapCanvas" width="1000" height="620"></canvas>
+            <div class="map-hint" id="mapHint">Scala: 1 px = — m · clicca "Calibra scala" per impostarla</div>
+          </div>
+          <p class="help" id="toolHelp">Modalità selezione: trascina un elemento per spostarlo, clicca per selezionarlo e modificarne i parametri nel pannello a destra.</p>
+        </div>
+
+        <div id="canvas3dWrap" class="canvas-wrap" style="display:none;">
+          <div class="hint3d">🖱️ Trascina per ruotare · rotellina per zoom — le zone attive mostrano i getti animati</div>
+        </div>
+        <p class="help" id="help3d" style="display:none;">Anteprima 3D approssimativa del giardino: prato, aiuole e posizione degli irrigatori, con getti d'acqua animati sulle zone in funzione. Per modificare la disposizione torna alla vista 2D.</p>
+      </div>
+
+      <div class="side-panel">
+        <div class="card" id="inspector">
+          <h3>Proprietà</h3>
+          <div class="empty" id="inspectorEmpty">Nessun elemento selezionato.<br>Scegli uno strumento e clicca sulla mappa.</div>
+          <div id="inspectorBody"></div>
+        </div>
+        <div class="card" style="margin-top:14px;">
+          <h3>Legenda</h3>
+          <div class="legend" id="legendZones"></div>
+          <hr class="sep">
+          <div class="legend">
+            <div class="legend-item"><span class="swatch" style="background:#3fa6cf"></span> Sensore</div>
+            <div class="legend-item"><span class="swatch prato"></span> Prato</div>
+            <div class="legend-item"><span class="swatch ghiaia"></span> Ghiaia</div>
+            <div class="legend-item"><span class="swatch terra"></span> Terra</div>
+            <div class="legend-item"><span class="swatch aiuola"></span> Aiuola</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== ZONE ===================== -->
+  <div class="view" id="view-zone">
+    <div class="grid" style="grid-template-columns:1fr;">
+      <div class="card">
+        <div class="section-title">
+          <h3>Pompa</h3>
+        </div>
+        <div class="field-row3">
+          <div class="field">
+            <label>Entità relè pompa (HA)</label>
+            <select id="pumpEntity"></select>
+          </div>
+          <div class="field">
+            <label>Portata massima pompa (l/min)</label>
+            <input type="number" id="pumpMaxFlow" value="60" min="1">
+          </div>
+          <div class="field">
+            <label>Pressione massima (bar)</label>
+            <input type="number" id="pumpMaxPressure" value="4" step="0.1" min="0.5">
+          </div>
+        </div>
+        <div class="field">
+          <label>Sensore portata reale (opzionale, l/min)</label>
+          <select id="pumpFlowSensor"></select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <h3>Zone irrigazione <span class="badge-count" id="zoneCount">0</span></h3>
+          <button class="primary sm" id="btnAddZone">+ Nuova zona</button>
+        </div>
+        <div id="zoneList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== CONTROLLO MANUALE ===================== -->
+  <div class="view" id="view-controllo">
+    <div class="card" style="margin-bottom:16px;">
+      <div class="row">
+        <div>
+          <h3>Pompa</h3>
+          <p class="small" id="pumpStateLabel">Stato: sconosciuto</p>
+        </div>
+        <span class="spacer"></span>
+        <span class="pill water" id="totalFlowPill">Portata attiva: 0 l/min</span>
+        <button class="water" id="btnPumpToggle">Avvia pompa</button>
+        <button class="danger" id="btnEmergencyStop">⏻ Stop tutto</button>
+      </div>
+    </div>
+    <div class="grid" id="manualZoneGrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
+  </div>
+
+  <!-- ===================== TIMER ===================== -->
+  <div class="view" id="view-timer">
+    <div class="card">
+      <div class="section-title">
+        <h3>Programma a timer (manuale)</h3>
+        <div class="row">
+          <label style="margin:0;"><input type="checkbox" id="timerSequential" checked style="width:auto;"> Sequenziale (1 zona alla volta)</label>
+        </div>
+      </div>
+      <p class="help">Imposta i minuti per ciascuna zona e avvia il programma. Le zone vengono aperte/chiuse tramite le entità Home Assistant configurate. Il timer gira lato browser/app: per un'automazione realmente indipendente da questa pagina, usa la scheda "Automatico" → "Genera automazione HA".</p>
+      <div class="timer-list" id="timerList"></div>
+      <hr class="sep">
+      <div class="row">
+        <button class="primary" id="btnStartTimer">▶ Avvia programma</button>
+        <button class="danger" id="btnStopTimer" disabled>■ Ferma programma</button>
+        <span class="spacer"></span>
+        <span class="pill" id="timerStatusPill">In attesa</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== AUTOMATICO ===================== -->
+  <div class="view" id="view-auto">
+    <div class="two-col">
+      <div class="card">
+        <div class="section-title">
+          <h3>Regole automatiche</h3>
+          <label style="margin:0;"><input type="checkbox" id="autoEnabled" style="width:auto;"> Attivo</label>
+        </div>
+        <div class="field">
+          <label>Entità meteo (weather.*)</label>
+          <select id="autoWeatherEntity"></select>
+        </div>
+        <div class="field">
+          <label>Sensore pioggia in corso (binary_sensor, opzionale — es. centralina Tuya)</label>
+          <select id="autoRainSensor"></select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Soglia probabilità pioggia per saltare (%)</label>
+            <input type="number" id="autoRainThreshold" value="60" min="0" max="100">
+          </div>
+          <div class="field">
+            <label>Orario di avvio programma</label>
+            <input type="time" id="autoStartTime" value="06:00">
+          </div>
+        </div>
+        <div class="field">
+          <label>Giorni attivi</label>
+          <div class="row" id="autoDays"></div>
+        </div>
+        <hr class="sep">
+        <div class="row">
+          <button class="primary" id="btnRunAutoCheck">🔍 Verifica adesso</button>
+          <button id="btnExportYaml">⬇ Genera automazione HA (YAML)</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Aggiustamento durata per condizioni</h3>
+        <p class="help">Regola in modo semplice la durata di irrigazione in base a temperatura/umidità stimate dal meteo e all'umidità del terreno rilevata dai sensori collegati a ciascuna zona.</p>
+        <div class="field-row">
+          <div class="field"><label>Riduci se temperatura &lt; (°C)</label><input type="number" id="autoTempLow" value="15"></div>
+          <div class="field"><label>Aumenta se temperatura &gt; (°C)</label><input type="number" id="autoTempHigh" value="28"></div>
+        </div>
+        <div class="field">
+          <label>Salta zona se umidità suolo &gt; (%)</label>
+          <input type="number" id="autoSoilThreshold" value="55" min="0" max="100">
+        </div>
+        <hr class="sep">
+        <h3>Log verifiche</h3>
+        <div id="autoLog"><div class="empty">Nessuna verifica eseguita ancora.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== DATABASE ===================== -->
+  <div class="view" id="view-db">
+    <div class="card">
+      <div class="section-title">
+        <h3>Database modelli irrigatori</h3>
+        <button class="primary sm" id="btnAddModel">+ Aggiungi modello</button>
+      </div>
+      <p class="help">Valori di portata/gittata basati sulle schede tecniche ufficiali dove disponibili (Rain Bird, Hunter, Gardena); gli altri sono indicativi e vanno verificati sulla scheda del tuo modello — puoi modificarli o aggiungerne di nuovi. La colonna "Scheda" collega alla pagina prodotto ufficiale, per avere sempre la documentazione a portata di mano. La portata è espressa "equivalente a 360°": per irrigatori statici/settoriali (spray) viene poi moltiplicata per l'arco impostato; per i rotori (getto singolo rotante) resta costante indipendentemente dall'arco, come nella realtà fisica di questi apparecchi.</p>
+      <div style="overflow:auto;">
+        <table id="modelTable">
+          <thead><tr>
+            <th>Marca</th><th>Modello</th><th>Tipo</th><th>Ugello / variante</th>
+            <th>Pressione nom. (bar)</th><th>Portata nom.</th><th>Gittata nom. (m)</th><th>Scheda</th><th></th>
+          </tr></thead>
+          <tbody id="modelTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== IMPOSTAZIONI ===================== -->
+  <div class="view" id="view-impostazioni">
+    <div class="two-col">
+      <div class="card">
+        <h3>Connessione Home Assistant</h3>
+        <div class="field">
+          <label>URL base (es. http://homeassistant.local:8123)</label>
+          <input type="text" id="haUrl" placeholder="http://192.168.1.50:8123">
+        </div>
+        <div class="field">
+          <label>Long-Lived Access Token</label>
+          <input type="password" id="haToken" placeholder="Profilo → Sicurezza → Crea token">
+        </div>
+        <div class="row">
+          <button class="water" id="btnHaConnect">🔌 Connetti e carica entità</button>
+          <span class="pill" id="haEntityCountPill"></span>
+        </div>
+        <p class="help">Il token resta salvato solo nel browser di questo dispositivo (localStorage) e le chiamate vanno dal tuo browser direttamente alla tua istanza HA, sulla rete locale: nessun dato passa da server esterni. Se apri l'app come Add-on (Ingress) usa lo stesso URL con cui apri normalmente Home Assistant, per evitare del tutto problemi di CORS. Se invece la usi da pannello iframe e ricevi un errore di rete, aggiungi l'origine in <code>configuration.yaml</code>:</p>
+        <pre class="small mono" style="background:var(--bg2);padding:10px;border-radius:7px;overflow:auto;">http:
+  cors_allowed_origins:
+    - "*"</pre>
+        <hr class="sep">
+        <h3>Versione</h3>
+        <p class="row" style="align-items:center;">
+          <span class="pill water" id="versionBadgeSettings" style="font-size:13px;padding:5px 12px;"></span>
+          <span class="small muted">Se dopo un aggiornamento su GitHub questo numero non cambia, l'add-on non ha ancora ricaricato i nuovi file — vedi "Come aggiornare" nel README del repository.</span>
+        </p>
+      </div>
+      <div class="card">
+        <h3>Come funziona il collegamento entità</h3>
+        <p class="help">
+        1) Connettiti a Home Assistant qui sopra.<br>
+        2) Vai su <b>Mappa</b>, disegna prato/aiuole/ghiaia/terra, posiziona irrigatori, tubi gocciolanti, alberi/siepi e sensori.<br>
+        3) Quando posizioni un <b>sensore</b> sulla mappa, ti viene chiesto subito a quale entità HA agganciarlo (meteo, pioggia, umidità suolo, temperatura — anche da centraline Tuya-compatibili integrate in HA).<br>
+        4) In <b>Zone &amp; Pompa</b> colleghi ogni valvola/zona e la pompa al relativo relè smart.<br>
+        5) Usa <b>Controllo manuale</b>, <b>Timer</b> o <b>Automatico</b> per irrigare, oppure torna alla <b>Home</b> per la vista d'insieme e lo stop rapido.
+        </p>
+        <hr class="sep">
+        <h3>Note tecniche</h3>
+        <ul class="help">
+          <li>Le zone si aprono in sequenza quando gestite manualmente/timer, poiché è presente un'unica pompa: la app avvia la pompa, apre la valvola di zona, attende, chiude, passa alla successiva.</li>
+          <li>Il calcolo della portata per irrigatore usa Q ∝ √P per stimare come varia la portata rispetto alla pressione nominale del modello scelto.</li>
+          <li>Il tubo gocciolante calcola la portata come (l/h per metro) × lunghezza reale della polilinea disegnata, in base alla scala calibrata.</li>
+          <li>Se la portata totale di una zona supera quella della pompa, viene mostrato un avviso: dividi gli irrigatori su più zone.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /screen-manage -->
+
+</div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+/* ============================================================
+   VERSIONE APP — incrementata ad ogni release.
+   Mostrata in Home, in Gestione e in Impostazioni, così è sempre
+   chiaro quale build è effettivamente in esecuzione (utile per
+   verificare che un aggiornamento dell'add-on sia andato a buon fine).
+   ============================================================ */
+const APP_VERSION = '1.1.0';
+
+const uid = () => Math.random().toString(36).slice(2,10);
+
+const DEFAULT_STATE = {
+  metersPerPixel: 0.05, // scale calibration
+  areas: [],       // {id,name,type('prato'|'ghiaia'|'terra'|'aiuola'),color,points:[[x,y]...]}
+  sprinklers: [],  // {id,x,y,brand,model,nozzle,type,scaleWithArc,customFlow360,customRadius,radiusM,angleStart,angleEnd,rotation,zoneId,name,numEmitters,flowPerEmitterLh}
+  driplines: [],   // {id,name,points:[[x,y]...],modelId,variantId,zoneId}
+  decor: [],       // {id,x,y,kind('albero'|'siepe'|'cespuglio'|'pianta'),size,name}
+  sensors: [],     // {id,x,y,kind,name,entityId}
+  zones: [],       // {id,name,color,relayEntity,pressureBar}
+  pump: {relayEntity:'', maxFlowLmin:60, maxPressureBar:4, flowSensorEntity:''},
+  timers: {},      // zoneId -> minutes
+  auto: {enabled:false, weatherEntity:'', rainSensor:'', rainThreshold:60, startTime:'06:00',
+         days:{lun:true,mar:true,mer:true,gio:true,ven:true,sab:true,dom:true},
+         tempLow:15, tempHigh:28, soilThreshold:55},
+  ha: {baseUrl:'', token:''},
+  customModels: []
+};
+
+let state = structuredClone(DEFAULT_STATE);
+let haEntities = []; // list of {entity_id, state, attributes}
+let haConnected = false;
+
+const ZONE_COLORS = ['#6ec178','#3fa6cf','#e0a83a','#c98fe0','#e0645a','#5ad1c0','#d1b25a','#8fa8e0'];
+
+/* ---------- Preset sprinkler DB (seeded from schede tecniche ufficiali dove indicato) ---------- */
+const PRESET_MODELS = [
+  {id:'rb5000', brand:'Rain Bird', model:'5000 Series (Rain Curtain)', type:'rotor', scaleWithArc:false,
+    source:'Scheda tecnica Rain Bird', datasheetUrl:'https://www.rainbird.com/products/5000-series-rotors',
+    nozzles:[
+      {id:'1.5', pressureBar:3.1, flow360:5.98, radiusM:9.4},
+      {id:'2.0', pressureBar:3.1, flow360:7.65, radiusM:9.75},
+      {id:'3.0', pressureBar:3.1, flow360:11.6, radiusM:10.7},
+      {id:'4.0', pressureBar:2.9, flow360:16.8, radiusM:12.8},
+      {id:'5.0', pressureBar:3.1, flow360:21.4, radiusM:13.7},
+      {id:'6.0', pressureBar:3.2, flow360:25.1, radiusM:14.3},
+      {id:'8.0', pressureBar:3.4, flow360:33.5, radiusM:15.2},
+    ]},
+  {id:'rb1800', brand:'Rain Bird', model:'1800 Series (statico/spray)', type:'spray', scaleWithArc:true,
+    source:'Scheda tecnica Rain Bird', datasheetUrl:'https://www.rainbird.com/products/1800-series-spray-sprinkler-bodies',
+    nozzles:[
+      {id:'8 ft', pressureBar:2.1, flow360:15.2, radiusM:2.4},
+      {id:'10 ft', pressureBar:2.1, flow360:22.8, radiusM:3.0},
+      {id:'12 ft', pressureBar:2.1, flow360:30.4, radiusM:3.7},
+      {id:'15 ft', pressureBar:2.1, flow360:38.0, radiusM:4.6},
+    ]},
+  {id:'rb3500', brand:'Rain Bird', model:'3500 Series', type:'rotor', scaleWithArc:false,
+    source:'Indicativo — verifica scheda ugello', datasheetUrl:'https://www.rainbird.com/products/3500-series-rotors',
+    nozzles:[
+      {id:'1.5', pressureBar:2.8, flow360:5.2, radiusM:7.9},
+      {id:'3.0', pressureBar:2.8, flow360:10.4, radiusM:9.1},
+      {id:'5.0', pressureBar:3.1, flow360:17.8, radiusM:10.4},
+    ]},
+  {id:'hpgp', brand:'Hunter', model:'PGP Ultra / I-20', type:'rotor', scaleWithArc:false,
+    source:'Scheda tecnica Hunter', datasheetUrl:'https://www.hunterirrigation.com/irrigation-product/rotors/pgpr-ultra',
+    nozzles:[
+      {id:'1.5 Blu', pressureBar:3.1, flow360:5.7, radiusM:9.4},
+      {id:'2.0 Blu', pressureBar:3.1, flow360:7.6, radiusM:10.4},
+      {id:'2.5 Blu', pressureBar:3.1, flow360:9.5, radiusM:10.7},
+      {id:'3.0 Blu', pressureBar:3.1, flow360:11.4, radiusM:11.6},
+    ]},
+  {id:'hpros', brand:'Hunter', model:'PROS-00 (statico/spray)', type:'spray', scaleWithArc:true,
+    source:'Indicativo — verifica scheda ugello', datasheetUrl:'https://www.hunterirrigation.com/irrigation-product/spray-heads/pros-00',
+    nozzles:[
+      {id:'8 ft', pressureBar:2.1, flow360:14.5, radiusM:2.4},
+      {id:'10 ft', pressureBar:2.1, flow360:21.6, radiusM:3.0},
+      {id:'12 ft', pressureBar:2.1, flow360:29.2, radiusM:3.7},
+    ]},
+  {id:'hmp', brand:'Hunter', model:'MP Rotator (rotante a getti multipli)', type:'rotor', scaleWithArc:false,
+    source:'Indicativo — verifica scheda ugello', datasheetUrl:'https://www.hunterirrigation.com/irrigation-product/nozzles/mp-rotator',
+    nozzles:[
+      {id:'MP1000 (90-210°)', pressureBar:2.8, flow360:4.2, radiusM:5.5},
+      {id:'MP2000 (90-210°)', pressureBar:2.8, flow360:5.8, radiusM:7.3},
+      {id:'MP3000 (90-210°)', pressureBar:2.8, flow360:7.6, radiusM:9.1},
+    ]},
+  {id:'gardena', brand:'Gardena', model:'Pop-up Sprinklersystem (generico)', type:'spray', scaleWithArc:true,
+    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.gardena.com/it/prodotti/irrigazione/',
+    nozzles:[
+      {id:'Standard', pressureBar:3.0, flow360:14, radiusM:3.5},
+      {id:'Extra', pressureBar:3.0, flow360:20, radiusM:4.5},
+    ]},
+  {id:'toro570', brand:'Toro', model:'570Z (statico/spray)', type:'spray', scaleWithArc:true,
+    source:'Indicativo — verifica scheda ugello', datasheetUrl:'https://www.toro.com/en/professional-contractor/irrigation/spray-heads/570z-pro-series-spray-heads',
+    nozzles:[
+      {id:'8 ft', pressureBar:2.1, flow360:14.0, radiusM:2.4},
+      {id:'12 ft', pressureBar:2.1, flow360:28.0, radiusM:3.7},
+    ]},
+  {id:'krain', brand:'K-Rain', model:'RPS75 (rotore)', type:'rotor', scaleWithArc:false,
+    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.krain.com/rotors/rps75',
+    nozzles:[
+      {id:'Standard', pressureBar:2.8, flow360:9.5, radiusM:9.4},
+    ]},
+  {id:'irritrol', brand:'Irritrol', model:'Rotore (generico)', type:'rotor', scaleWithArc:false,
+    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.irritrol.com/products/rotors',
+    nozzles:[
+      {id:'Standard', pressureBar:3.0, flow360:10, radiusM:9},
+    ]},
+  {id:'drip', brand:'Generico', model:'Gocciolatore puntuale', type:'drip', scaleWithArc:false,
+    source:'Standard di settore', datasheetUrl:'',
+    nozzles:[
+      {id:'2 l/h', pressureBar:1.5, flow360:0, radiusM:0.3},
+      {id:'4 l/h', pressureBar:1.5, flow360:0, radiusM:0.3},
+      {id:'8 l/h', pressureBar:1.5, flow360:0, radiusM:0.4},
+    ]},
+];
+
+/* ---------- Preset dripline DB (tubo forato gocciolante) ---------- */
+const PRESET_DRIPLINES = [
+  {id:'rb-xfd-09-12', brand:'Rain Bird', model:'XF Dripline XFD-09-12 (16 mm)',
+    source:'Scheda tecnica Rain Bird', datasheetUrl:'https://www.rainbird.com/professionals/specifier/dripline',
+    variants:[
+      {id:'0.92 GPH @ 30 cm', spacingCm:30, flowPerDripperLh:3.48, flowPerMeterLh:11.6},
+    ]},
+  {id:'rb-xfd-06-18', brand:'Rain Bird', model:'XF Dripline XFD-06-18 (16 mm)',
+    source:'Scheda tecnica Rain Bird', datasheetUrl:'https://www.rainbird.com/professionals/specifier/dripline',
+    variants:[
+      {id:'0.6 GPH @ 45 cm', spacingCm:45, flowPerDripperLh:2.27, flowPerMeterLh:5.0},
+    ]},
+  {id:'gardena-drip16', brand:'Gardena', model:'Micro-Drip-System — tubo gocciolante interrato 1,6 l/h',
+    source:'Scheda tecnica Gardena', datasheetUrl:'https://www.gardena.com/it/prodotti/irrigazione/micro-irrigazione/tubo-gocciolante-interrato-e-di-superficie-16-lh-25-m/970653801.html',
+    variants:[
+      {id:'1,6 l/h @ 30 cm', spacingCm:30, flowPerDripperLh:1.6, flowPerMeterLh:5.3},
+    ]},
+  {id:'netafim-generic', brand:'Netafim', model:'Techline (generico, autocompensante)',
+    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.netafim.com/en/drip-irrigation/dripperlines/techline/',
+    variants:[
+      {id:'1,6 l/h @ 33 cm', spacingCm:33, flowPerDripperLh:1.6, flowPerMeterLh:4.85},
+      {id:'2,3 l/h @ 33 cm', spacingCm:33, flowPerDripperLh:2.3, flowPerMeterLh:6.97},
+    ]},
+  {id:'claber-generic', brand:'Claber', model:'Tubo gocciolante (generico)',
+    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.claber.com/it/prodotti/irrigazione-a-goccia',
+    variants:[
+      {id:'2 l/h @ 30 cm', spacingCm:30, flowPerDripperLh:2, flowPerMeterLh:6.7},
+    ]},
+];
+
+function allModels(){ return [...PRESET_MODELS, ...state.customModels.filter(m=>m.type!=='dripline')]; }
+function getModel(id){ return allModels().find(m=>m.id===id); }
+function allDriplineModels(){ return [...PRESET_DRIPLINES, ...state.customModels.filter(m=>m.type==='dripline')]; }
+function getDriplineModel(id){ return allDriplineModels().find(m=>m.id===id); }
+
+/* ============================================================
+   PERSISTENCE
+   ============================================================ */
+async function saveState(){
+  try{
+    localStorage.setItem('irriga-config', JSON.stringify({state}));
+  }catch(e){ console.warn('save failed', e); }
+}
+async function loadState(){
+  try{
+    const raw = localStorage.getItem('irriga-config');
+    if(raw){
+      const parsed = JSON.parse(raw);
+      state = Object.assign(structuredClone(DEFAULT_STATE), parsed.state);
+      // deep-merge nested defaults in case of older saved shape
+      state.pump = Object.assign(structuredClone(DEFAULT_STATE.pump), parsed.state.pump||{});
+      state.auto = Object.assign(structuredClone(DEFAULT_STATE.auto), parsed.state.auto||{});
+      state.ha = Object.assign(structuredClone(DEFAULT_STATE.ha), parsed.state.ha||{});
+    }
+  }catch(e){ /* no saved state yet */ }
+}
+let saveTimer=null;
+function queueSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveState, 400); dirty3D = true; }
+
+/* ============================================================
+   TOASTS
+   ============================================================ */
+function toast(msg, kind=''){
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className = 'toast '+kind;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='.3s'; setTimeout(()=>el.remove(),300); }, 4200);
+}
+
+/* ============================================================
+   HOME ASSISTANT API
+   ============================================================ */
+async function haFetch(path, opts={}){
+  if(!state.ha.baseUrl || !state.ha.token) throw new Error('HA non configurato');
+  const url = state.ha.baseUrl.replace(/\/$/,'') + path;
+  const res = await fetch(url, {
+    ...opts,
+    headers:{
+      'Authorization':'Bearer '+state.ha.token,
+      'Content-Type':'application/json',
+      ...(opts.headers||{})
+    }
+  });
+  if(!res.ok) throw new Error('HA HTTP '+res.status);
+  return res;
+}
+async function haTestAndLoad(){
+  try{
+    await haFetch('/api/');
+    const res = await haFetch('/api/states');
+    haEntities = await res.json();
+    haConnected = true;
+    updateHaStatus();
+    populateEntityDropdowns();
+    toast('Connesso a Home Assistant — '+haEntities.length+' entità caricate','ok');
+  }catch(e){
+    haConnected = false;
+    updateHaStatus();
+    toast('Connessione HA fallita: '+e.message+' (verifica URL, token, CORS)','err');
+  }
+}
+function updateHaStatus(){
+  const dot = document.getElementById('haDot');
+  const txt = document.getElementById('haStatusText');
+  dot.className = 'dot '+(haConnected?'on':'off');
+  txt.textContent = haConnected ? 'Home Assistant connesso' : 'Home Assistant non connesso';
+  document.getElementById('haEntityCountPill').textContent = haConnected ? (haEntities.length+' entità') : '';
+}
+async function haCallService(domain, service, entity_id){
+  return haFetch('/api/services/'+domain+'/'+service, {method:'POST', body:JSON.stringify({entity_id})});
+}
+async function haGetState(entity_id){
+  try{
+    const res = await haFetch('/api/states/'+entity_id);
+    return await res.json();
+  }catch(e){ return null; }
+}
+function entitiesByDomain(prefix){
+  return haEntities.filter(e=>e.entity_id.startsWith(prefix+'.'));
+}
+function fillSelect(sel, list, current, placeholder){
+  sel.innerHTML='';
+  const optNone = document.createElement('option');
+  optNone.value=''; optNone.textContent = placeholder || '— nessuna —';
+  sel.appendChild(optNone);
+  list.forEach(e=>{
+    const o = document.createElement('option');
+    o.value=e.entity_id;
+    const name = (e.attributes && e.attributes.friendly_name) || e.entity_id;
+    o.textContent = name+' ('+e.entity_id+')';
+    sel.appendChild(o);
+  });
+  if(current) sel.value = current;
+}
+function populateEntityDropdowns(){
+  const switches = [...entitiesByDomain('switch'), ...entitiesByDomain('input_boolean')];
+  fillSelect(document.getElementById('pumpEntity'), switches, state.pump.relayEntity, '— seleziona relè pompa —');
+  fillSelect(document.getElementById('pumpFlowSensor'), entitiesByDomain('sensor'), state.pump.flowSensorEntity, '— nessuno —');
+  fillSelect(document.getElementById('autoWeatherEntity'), entitiesByDomain('weather'), state.auto.weatherEntity, '— seleziona entità meteo —');
+  fillSelect(document.getElementById('autoRainSensor'), entitiesByDomain('binary_sensor'), state.auto.rainSensor, '— nessuno —');
+  renderZones(); // zone relè dropdowns depend on entities too
+}
+
+/* ============================================================
+   TABS
+   ============================================================ */
+document.getElementById('tabs').addEventListener('click', e=>{
+  const btn = e.target.closest('.tab-btn');
+  if(!btn) return;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('view-'+btn.dataset.view).classList.add('active');
+  if(btn.dataset.view==='controllo') renderManualControl();
+  if(btn.dataset.view==='timer') renderTimer();
+  if(btn.dataset.view==='db') renderModelTable();
+  if(btn.dataset.view==='mappa') drawMap();
+});
+
+/* ============================================================
+   MAP EDITOR
+   ============================================================ */
+const canvas = document.getElementById('mapCanvas');
+const ctx = canvas.getContext('2d');
+let tool = 'select';
+let dragging = null; // {kind:'sprinkler'|'sensor'|'area'|'dripline'|'decor', id, idx}
+let drawingArea = null; // {points:[[x,y]]}
+let drawingLine = null; // {points:[[x,y]]} for dripline
+let calibratePts = [];
+let selected = null; // {kind,id}
+
+function resizeCanvasToDisplay(){
+  const wrap = canvas.parentElement;
+  const w = wrap.clientWidth;
+  canvas.width = w;
+  canvas.height = Math.round(w*0.62);
+  drawMap();
+}
+window.addEventListener('resize', resizeCanvasToDisplay);
+
+document.querySelectorAll('.map-toolbar [data-tool]').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('.map-toolbar [data-tool]').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    tool = b.dataset.tool;
+    drawingArea = null; drawingLine = null; calibratePts=[];
+    const help = {
+      select:'Modalità selezione: trascina un elemento per spostarlo, clicca per selezionarlo e modificarne i parametri nel pannello a destra.',
+      area:'Disegna area: clicca per aggiungere vertici del perimetro, doppio click per chiudere. Poi scegli il tipo (prato, ghiaia, terra, aiuola) nel pannello a destra.',
+      sprinkler:"Aggiungi irrigatore: clicca sulla mappa nel punto dove si trova (o si troverà) l'irrigatore.",
+      dripline:'Tubo gocciolante: clicca per aggiungere i punti del percorso del tubo, doppio click per terminare la linea.',
+      vegetazione:"Aggiungi albero/siepe/pianta: clicca sulla mappa, poi scegli il tipo nel pannello a destra (solo decorativo, non collegato a irrigazione).",
+      sensor:"Aggiungi sensore: clicca sulla mappa dove è posizionata la centralina/sonda, poi collegala a un'entità HA.",
+      calibrate:'Calibra scala: clicca due punti di cui conosci la distanza reale (es. lungo un muro), poi inserisci la lunghezza in metri.'
+    };
+    document.getElementById('toolHelp').textContent = help[tool];
+    drawMap();
+  });
+});
+
+function canvasPos(evt){
+  const rect = canvas.getBoundingClientRect();
+  const cx = (evt.touches? evt.touches[0].clientX : evt.clientX) - rect.left;
+  const cy = (evt.touches? evt.touches[0].clientY : evt.clientY) - rect.top;
+  return [cx*(canvas.width/rect.width), cy*(canvas.height/rect.height)];
+}
+
+function hitTestSprinkler(x,y){
+  for(let i=state.sprinklers.length-1;i>=0;i--){
+    const s = state.sprinklers[i];
+    if(Math.hypot(s.x-x,s.y-y) < 12) return s;
+  }
+  return null;
+}
+function hitTestSensor(x,y){
+  for(let i=state.sensors.length-1;i>=0;i--){
+    const s = state.sensors[i];
+    if(Math.hypot(s.x-x,s.y-y) < 12) return s;
+  }
+  return null;
+}
+function hitTestArea(x,y){
+  for(let i=state.areas.length-1;i>=0;i--){
+    const a = state.areas[i];
+    if(pointInPolygon([x,y], a.points)) return a;
+  }
+  return null;
+}
+function distToSegment(p,a,b){
+  const A=p[0]-a[0], B=p[1]-a[1], C=b[0]-a[0], D=b[1]-a[1];
+  const dot=A*C+B*D, lenSq=C*C+D*D;
+  let t = lenSq!==0 ? dot/lenSq : -1;
+  t = Math.max(0, Math.min(1, t));
+  const xx=a[0]+t*C, yy=a[1]+t*D;
+  return Math.hypot(p[0]-xx, p[1]-yy);
+}
+function hitTestDripline(x,y){
+  for(let i=state.driplines.length-1;i>=0;i--){
+    const dl = state.driplines[i];
+    for(let j=1;j<dl.points.length;j++){
+      if(distToSegment([x,y], dl.points[j-1], dl.points[j]) < 10) return dl;
+    }
+  }
+  return null;
+}
+function hitTestDecor(x,y){
+  for(let i=state.decor.length-1;i>=0;i--){
+    const d = state.decor[i];
+    if(Math.hypot(d.x-x,d.y-y) < 14) return d;
+  }
+  return null;
+}
+function pointInPolygon(pt, poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i][0], yi=poly[i][1], xj=poly[j][0], yj=poly[j][1];
+    const intersect = ((yi>pt[1])!==(yj>pt[1])) && (pt[0] < (xj-xi)*(pt[1]-yi)/(yj-yi)+xi);
+    if(intersect) inside=!inside;
+  }
+  return inside;
+}
+
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+canvas.addEventListener('dblclick', onDblClick);
+
+function onDown(evt){
+  const [x,y] = canvasPos(evt);
+  if(tool==='select'){
+    const sp = hitTestSprinkler(x,y);
+    if(sp){ dragging={kind:'sprinkler',id:sp.id}; selectItem('sprinkler', sp.id); return; }
+    const se = hitTestSensor(x,y);
+    if(se){ dragging={kind:'sensor',id:se.id}; selectItem('sensor', se.id); return; }
+    const dc = hitTestDecor(x,y);
+    if(dc){ dragging={kind:'decor',id:dc.id}; selectItem('decor', dc.id); return; }
+    const dl = hitTestDripline(x,y);
+    if(dl){ selectItem('dripline', dl.id); dragging={kind:'dripline',id:dl.id,startX:x,startY:y}; return; }
+    const ar = hitTestArea(x,y);
+    if(ar){ selectItem('area', ar.id); dragging={kind:'area',id:ar.id,startX:x,startY:y}; return; }
+    selectItem(null,null);
+  } else if(tool==='sprinkler'){
+    const s = {id:uid(), x,y, brand:'rb5000', modelId:'rb5000', nozzleId:'3.0', type:'rotor', scaleWithArc:false,
+               radiusM:10.7, angleStart:0, angleEnd:360, rotation:0, zoneId: state.zones[0]?state.zones[0].id:'', name:'Irrigatore '+(state.sprinklers.length+1),
+               numEmitters:1, flowPerEmitterLh:4};
+    state.sprinklers.push(s);
+    selectItem('sprinkler', s.id);
+    queueSave(); drawMap();
+  } else if(tool==='sensor'){
+    const s = {id:uid(), x,y, kind:'meteo', name:'Sensore '+(state.sensors.length+1), entityId:'', affectsZoneId:''};
+    state.sensors.push(s);
+    selectItem('sensor', s.id);
+    queueSave(); drawMap();
+  } else if(tool==='vegetazione'){
+    const d = {id:uid(), x,y, kind:'albero', size:1, name:'Albero '+(state.decor.length+1)};
+    state.decor.push(d);
+    selectItem('decor', d.id);
+    queueSave(); drawMap();
+  } else if(tool==='area'){
+    if(!drawingArea) drawingArea = {points:[]};
+    drawingArea.points.push([x,y]);
+    drawMap();
+  } else if(tool==='dripline'){
+    if(!drawingLine) drawingLine = {points:[]};
+    drawingLine.points.push([x,y]);
+    drawMap();
+  } else if(tool==='calibrate'){
+    calibratePts.push([x,y]);
+    if(calibratePts.length===2){
+      const pxDist = Math.hypot(calibratePts[1][0]-calibratePts[0][0], calibratePts[1][1]-calibratePts[0][1]);
+      const real = prompt('Distanza reale tra i due punti (in metri):','10');
+      const realM = parseFloat(real);
+      if(realM && realM>0 && pxDist>2){
+        state.metersPerPixel = realM/pxDist;
+        updateScaleHint();
+        toast('Scala impostata: 1 px ≈ '+state.metersPerPixel.toFixed(3)+' m','ok');
+        queueSave();
+      }
+      calibratePts=[];
+    }
+    drawMap();
+  }
+}
+function onMove(evt){
+  if(!dragging) {
+    if(tool==='area'&&drawingArea){ drawMap(true, canvasPos(evt)); }
+    if(tool==='dripline'&&drawingLine){ drawMap(false, canvasPos(evt), true); }
+    return;
+  }
+  const [x,y] = canvasPos(evt);
+  if(dragging.kind==='sprinkler'){
+    const s = state.sprinklers.find(s=>s.id===dragging.id); s.x=x; s.y=y;
+  } else if(dragging.kind==='sensor'){
+    const s = state.sensors.find(s=>s.id===dragging.id); s.x=x; s.y=y;
+  } else if(dragging.kind==='decor'){
+    const d = state.decor.find(d=>d.id===dragging.id); d.x=x; d.y=y;
+  } else if(dragging.kind==='area'){
+    const a = state.areas.find(a=>a.id===dragging.id);
+    const dx = x-dragging.startX, dy = y-dragging.startY;
+    a.points = a.points.map(p=>[p[0]+dx,p[1]+dy]);
+    dragging.startX=x; dragging.startY=y;
+  } else if(dragging.kind==='dripline'){
+    const dl = state.driplines.find(d=>d.id===dragging.id);
+    const dx = x-dragging.startX, dy = y-dragging.startY;
+    dl.points = dl.points.map(p=>[p[0]+dx,p[1]+dy]);
+    dragging.startX=x; dragging.startY=y;
+  }
+  drawMap();
+}
+function onUp(){ if(dragging){ queueSave(); } dragging=null; }
+function onDblClick(){
+  if(tool==='area' && drawingArea && drawingArea.points.length>=3){
+    const a = {id:uid(), name:'Area '+(state.areas.length+1), type:'prato', color: '', points:drawingArea.points};
+    state.areas.push(a);
+    drawingArea=null;
+    selectItem('area', a.id);
+    queueSave(); drawMap();
+  } else if(tool==='dripline' && drawingLine && drawingLine.points.length>=2){
+    const dl = {id:uid(), name:'Tubo gocciolante '+(state.driplines.length+1),
+      points:drawingLine.points, modelId:'gardena-drip16', variantId:'1,6 l/h @ 30 cm',
+      zoneId: state.zones[0]?state.zones[0].id:''};
+    state.driplines.push(dl);
+    drawingLine=null;
+    selectItem('dripline', dl.id);
+    queueSave(); drawMap();
+  }
+}
+
+function selectItem(kind,id){
+  selected = kind? {kind,id} : null;
+  renderInspector();
+  drawMap();
+}
+
+function updateScaleHint(){
+  document.getElementById('mapHint').textContent = 'Scala: 1 px ≈ '+state.metersPerPixel.toFixed(3)+' m ('+(1/state.metersPerPixel).toFixed(1)+' px/m)';
+}
+
+/* ---------- flow physics helpers ---------- */
+function sprinklerModelInfo(sp){
+  const m = getModel(sp.modelId);
+  const nz = m ? m.nozzles.find(n=>n.id===sp.nozzleId) : null;
+  return {model:m, nozzle:nz};
+}
+function computeSprinklerFlowLmin(sp, zonePressureBar){
+  if(sp.type==='drip'){
+    return (sp.numEmitters||0) * (sp.flowPerEmitterLh||0) / 60;
+  }
+  const {model, nozzle} = sprinklerModelInfo(sp);
+  if(!nozzle) return 0;
+  const P = zonePressureBar || nozzle.pressureBar;
+  let flow360 = nozzle.flow360 * Math.sqrt(Math.max(P,0.1)/nozzle.pressureBar);
+  const arcSpan = Math.max(0, Math.min(360, sp.angleEnd - sp.angleStart));
+  const scaleWithArc = model ? model.scaleWithArc : sp.scaleWithArc;
+  return scaleWithArc ? flow360*(arcSpan/360) : flow360;
+}
+function computeSprinklerRadiusM(sp, zonePressureBar){
+  const {nozzle} = sprinklerModelInfo(sp);
+  if(!nozzle) return sp.radiusM||3;
+  const P = zonePressureBar || nozzle.pressureBar;
+  return nozzle.radiusM * Math.pow(Math.max(P,0.1)/nozzle.pressureBar, 0.25);
+}
+function polylineLengthPx(points){
+  let len=0;
+  for(let i=1;i<points.length;i++) len += Math.hypot(points[i][0]-points[i-1][0], points[i][1]-points[i-1][1]);
+  return len;
+}
+function driplineInfo(dl){
+  const m = getDriplineModel(dl.modelId);
+  const v = m ? m.variants.find(x=>x.id===dl.variantId) : null;
+  return {model:m, variant:v};
+}
+function computeDriplineLengthM(dl){
+  return polylineLengthPx(dl.points) * state.metersPerPixel;
+}
+function computeDriplineFlowLmin(dl){
+  const {variant} = driplineInfo(dl);
+  if(!variant) return 0;
+  const lengthM = computeDriplineLengthM(dl);
+  return (lengthM * variant.flowPerMeterLh) / 60;
+}
+function zoneById(id){ return state.zones.find(z=>z.id===id); }
+function zoneTotalFlow(zoneId){
+  const zone = zoneById(zoneId);
+  const p = zone ? zone.pressureBar : 3;
+  const sprinklerFlow = state.sprinklers.filter(s=>s.zoneId===zoneId)
+    .reduce((sum,s)=>sum+computeSprinklerFlowLmin(s,p),0);
+  const driplineFlow = state.driplines.filter(d=>d.zoneId===zoneId)
+    .reduce((sum,d)=>sum+computeDriplineFlowLmin(d),0);
+  return sprinklerFlow + driplineFlow;
+}
+
+/* ---------- drawing ---------- */
+const AREA_TYPE_FILL = {
+  prato:   {base:'#6ec178', line:'#4c8a52'},
+  ghiaia:  {base:'#c7cac2', line:'#8b9088'},
+  terra:   {base:'#8a6440', line:'#5c4229'},
+  aiuola:  {base:'#a2c96b', line:'#7a5636'},
+};
+const DECOR_ICON = {albero:'🌳', siepe:'🌿', cespuglio:'🪴', pianta:'🌱'};
+
+function drawMap(previewArea, previewPt, previewLine){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // grid
+  ctx.save();
+  const gridPx = Math.max(14, (1/state.metersPerPixel)); // ~1 meter grid
+  ctx.strokeStyle = '#ffffff08';
+  ctx.lineWidth=1;
+  for(let x=0;x<canvas.width;x+=gridPx){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke(); }
+  for(let y=0;y<canvas.height;y+=gridPx){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke(); }
+  ctx.restore();
+
+  // areas — texture in base al tipo (prato/ghiaia/terra/aiuola)
+  state.areas.forEach(a=>{
+    const style = AREA_TYPE_FILL[a.type] || AREA_TYPE_FILL.prato;
+    const fillColor = a.color || style.base;
+    ctx.beginPath();
+    a.points.forEach(([x,y],i)=> i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
+    ctx.closePath();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = fillColor+'38';
+    ctx.fill();
+    // texture stipple/hatch per tipo
+    const bx0=Math.min(...a.points.map(p=>p[0])), bx1=Math.max(...a.points.map(p=>p[0]));
+    const by0=Math.min(...a.points.map(p=>p[1])), by1=Math.max(...a.points.map(p=>p[1]));
+    if(a.type==='ghiaia'){
+      ctx.fillStyle=fillColor+'55';
+      for(let gx=bx0; gx<bx1; gx+=7) for(let gy=by0; gy<by1; gy+=7){
+        if(((gx*13+gy*7)%17)<5) ctx.fillRect(gx+((gy/7)%2)*3, gy, 1.6, 1.6);
+      }
+    } else if(a.type==='terra'){
+      ctx.strokeStyle=fillColor+'40'; ctx.lineWidth=1;
+      for(let gy=by0; gy<by1; gy+=6){ ctx.beginPath(); ctx.moveTo(bx0,gy); ctx.lineTo(bx1,gy); ctx.stroke(); }
+    } else if(a.type==='prato'){
+      ctx.strokeStyle=fillColor+'30'; ctx.lineWidth=1;
+      for(let gx=bx0; gx<bx1; gx+=5){ ctx.beginPath(); ctx.moveTo(gx,by1); ctx.lineTo(gx-2,by0); ctx.stroke(); }
+    } else if(a.type==='aiuola'){
+      ctx.fillStyle='#e0a83a30';
+      for(let gx=bx0; gx<bx1; gx+=16) for(let gy=by0; gy<by1; gy+=16){
+        if(((gx*3+gy*5)%23)<4) ctx.beginPath(), ctx.arc(gx,gy,2,0,7), ctx.fill();
+      }
+    }
+    ctx.restore();
+    ctx.strokeStyle = selected&&selected.kind==='area'&&selected.id===a.id ? '#ffffff' : style.line;
+    ctx.lineWidth = selected&&selected.kind==='area'&&selected.id===a.id ? 2.5 : 1.5;
+    ctx.stroke();
+    const cx = a.points.reduce((s,p)=>s+p[0],0)/a.points.length;
+    const cy = a.points.reduce((s,p)=>s+p[1],0)/a.points.length;
+    ctx.fillStyle='#e9f2eecc'; ctx.font='11px Inter'; ctx.textAlign='center';
+    ctx.fillText(a.name, cx, cy);
+  });
+
+  // drawing-in-progress area
+  if(drawingArea && drawingArea.points.length){
+    ctx.beginPath();
+    drawingArea.points.forEach(([x,y],i)=> i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
+    if(previewPt) ctx.lineTo(previewPt[0],previewPt[1]);
+    ctx.strokeStyle='#cbb27a'; ctx.setLineDash([5,4]); ctx.lineWidth=1.5; ctx.stroke(); ctx.setLineDash([]);
+    drawingArea.points.forEach(([x,y])=>{ ctx.beginPath(); ctx.arc(x,y,3,0,7); ctx.fillStyle='#cbb27a'; ctx.fill(); });
+  }
+
+  // driplines (tubo gocciolante) — linea tratteggiata con tacche gocciolatore
+  state.driplines.forEach(dl=>{
+    const zone = zoneById(dl.zoneId);
+    const color = zone ? zone.color : '#e0a83a';
+    const isSel = selected&&selected.kind==='dripline'&&selected.id===dl.id;
+    ctx.beginPath();
+    dl.points.forEach(([x,y],i)=> i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
+    ctx.strokeStyle = isSel? '#ffffff' : color;
+    ctx.lineWidth = isSel? 4 : 3;
+    ctx.setLineDash([2,5]); ctx.lineCap='round';
+    ctx.stroke(); ctx.setLineDash([]);
+    // tacche gocciolatore ortogonali lungo il percorso
+    for(let i=1;i<dl.points.length;i++){
+      const [x1,y1]=dl.points[i-1], [x2,y2]=dl.points[i];
+      const segLen = Math.hypot(x2-x1,y2-y1);
+      const nx=-(y2-y1)/segLen, ny=(x2-x1)/segLen;
+      for(let d=6; d<segLen; d+=12){
+        const t=d/segLen, px=x1+(x2-x1)*t, py=y1+(y2-y1)*t;
+        ctx.beginPath(); ctx.moveTo(px-nx*3,py-ny*3); ctx.lineTo(px+nx*3,py+ny*3);
+        ctx.strokeStyle=color+'99'; ctx.lineWidth=1; ctx.stroke();
+      }
+    }
+    const mid = dl.points[Math.floor(dl.points.length/2)];
+    ctx.fillStyle='#e9f2eecc'; ctx.font='10px Inter'; ctx.textAlign='center';
+    ctx.fillText(dl.name, mid[0], mid[1]-8);
+  });
+  if(drawingLine && drawingLine.points.length){
+    ctx.beginPath();
+    drawingLine.points.forEach(([x,y],i)=> i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
+    if(previewLine && previewPt) ctx.lineTo(previewPt[0],previewPt[1]);
+    ctx.strokeStyle='#e0a83a'; ctx.setLineDash([2,5]); ctx.lineWidth=2.5; ctx.stroke(); ctx.setLineDash([]);
+    drawingLine.points.forEach(([x,y])=>{ ctx.beginPath(); ctx.arc(x,y,3,0,7); ctx.fillStyle='#e0a83a'; ctx.fill(); });
+  }
+
+  // sprinklers (coverage arc + icon)
+  state.sprinklers.forEach(sp=>{
+    const zone = zoneById(sp.zoneId);
+    const color = zone ? zone.color : '#8fa79c';
+    const rM = computeSprinklerRadiusM(sp, zone?zone.pressureBar:null);
+    const rPx = sp.type==='drip' ? 16 : Math.max(6, rM/state.metersPerPixel);
+    if(sp.type!=='drip'){
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y);
+      const a0 = (sp.rotation+sp.angleStart-90)*Math.PI/180;
+      const a1 = (sp.rotation+sp.angleEnd-90)*Math.PI/180;
+      ctx.arc(sp.x, sp.y, rPx, a0, a1);
+      ctx.closePath();
+      ctx.fillStyle = color+'2e';
+      ctx.fill();
+      ctx.strokeStyle = color+'99';
+      ctx.lineWidth=1;
+      ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(sp.x,sp.y,rPx,0,7); ctx.fillStyle=color+'22'; ctx.fill(); ctx.strokeStyle=color+'88'; ctx.stroke();
+    }
+    // icon dot
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, selected&&selected.kind==='sprinkler'&&selected.id===sp.id?7:5, 0, 7);
+    ctx.fillStyle = color;
+    ctx.fill();
+    if(selected&&selected.kind==='sprinkler'&&selected.id===sp.id){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
+    ctx.fillStyle='#e9f2eecc'; ctx.font='10px Inter'; ctx.textAlign='center';
+    ctx.fillText(sp.name, sp.x, sp.y-rPx-6 < 10 ? sp.y+16 : sp.y-rPx-6);
+  });
+
+  // decor (alberi, siepi, piante) — puramente visivo
+  state.decor.forEach(d=>{
+    const isSel = selected&&selected.kind==='decor'&&selected.id===d.id;
+    const r = 10 + (d.size||1)*4;
+    ctx.beginPath(); ctx.arc(d.x,d.y,r,0,7);
+    ctx.fillStyle = '#1c3327'; ctx.fill();
+    if(isSel){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
+    ctx.font=(r*1.3)+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(DECOR_ICON[d.kind]||'🌳', d.x, d.y);
+    ctx.textBaseline='alphabetic';
+  });
+
+  // sensors
+  const sensorIcons = {meteo:'☁️',pioggia:'🌧️',umidita_suolo:'🌱',temperatura:'🌡️'};
+  state.sensors.forEach(se=>{
+    ctx.beginPath();
+    ctx.arc(se.x, se.y, selected&&selected.kind==='sensor'&&selected.id===se.id?11:9, 0, 7);
+    ctx.fillStyle = '#3fa6cf';
+    ctx.fill();
+    if(selected&&selected.kind==='sensor'&&selected.id===se.id){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
+    ctx.font='11px Inter'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(sensorIcons[se.kind]||'📡', se.x, se.y);
+    ctx.textBaseline='alphabetic';
+    ctx.fillStyle='#e9f2eecc'; ctx.font='10px Inter';
+    ctx.fillText(se.name, se.x, se.y+20);
+  });
+
+  // calibration points
+  calibratePts.forEach(([x,y])=>{ ctx.beginPath(); ctx.arc(x,y,4,0,7); ctx.fillStyle='#e0a83a'; ctx.fill(); });
+  if(calibratePts.length===1){
+    ctx.fillStyle='#e0a83a'; ctx.font='11px Inter';
+    ctx.fillText('Clicca il secondo punto…', calibratePts[0][0]+10, calibratePts[0][1]-10);
+  }
+
+  // animated water for active sprinklers & driplines
+  if(activeZones.size>0){
+    const tSec = performance.now()/1000;
+    state.sprinklers.forEach(sp=>{
+      if(activeZones.has(sp.zoneId)) drawSprinklerWaterFX(sp, tSec);
+    });
+    state.driplines.forEach(dl=>{
+      if(activeZones.has(dl.zoneId)) drawDriplineWaterFX(dl, tSec);
+    });
+  }
+}
+
+function drawSprinklerWaterFX(sp, tSec){
+  const zone = zoneById(sp.zoneId);
+  const rM = computeSprinklerRadiusM(sp, zone?zone.pressureBar:null);
+  const rPx = sp.type==='drip' ? 16 : Math.max(6, rM/state.metersPerPixel);
+  const model = getModel(sp.modelId);
+  const isRotor = model ? model.type==='rotor' : sp.type==='rotor';
+  const arcSpan = Math.max(1, sp.angleEnd - sp.angleStart);
+  let centerAngle = sp.angleStart + arcSpan/2;
+
+  if(sp.type!=='drip' && isRotor){
+    const period=2.5;
+    let phase = (tSec % period)/period; if(phase>0.5) phase = 1-phase; phase*=2;
+    centerAngle = sp.angleStart + phase*arcSpan;
+    const a = (sp.rotation+centerAngle-90)*Math.PI/180;
+    ctx.beginPath(); ctx.moveTo(sp.x,sp.y);
+    ctx.lineTo(sp.x+Math.cos(a)*rPx, sp.y+Math.sin(a)*rPx);
+    ctx.strokeStyle='rgba(223,246,255,0.75)'; ctx.lineWidth=2; ctx.stroke();
+  }
+
+  const n = sp.type==='drip' ? 4 : 10;
+  for(let i=0;i<n;i++){
+    const off = i/n;
+    const u = (tSec*0.55 + off) % 1;
+    let ang;
+    if(sp.type!=='drip' && isRotor){ ang = centerAngle + (off-0.5)*16; }
+    else { ang = sp.angleStart + off*arcSpan; }
+    const a = (sp.rotation+ang-90)*Math.PI/180;
+    const dist = u*rPx;
+    const x = sp.x+Math.cos(a)*dist, y = sp.y+Math.sin(a)*dist;
+    ctx.beginPath();
+    ctx.arc(x,y, sp.type==='drip'?1.6:2.2, 0,7);
+    ctx.fillStyle = `rgba(200,235,255,${(0.9*(1-u*0.6)).toFixed(2)})`;
+    ctx.fill();
+  }
+  const pulse = 0.5+0.5*Math.sin(tSec*4);
+  ctx.beginPath(); ctx.arc(sp.x, sp.y, 6+pulse*3, 0,7);
+  ctx.strokeStyle='rgba(200,235,255,0.45)'; ctx.lineWidth=1.4; ctx.stroke();
+}
+
+function drawDriplineWaterFX(dl, tSec){
+  const total = polylineLengthPx(dl.points);
+  if(total<=0) return;
+  const nDrops = Math.max(4, Math.round(total/40));
+  for(let i=0;i<nDrops;i++){
+    const u = ((tSec*0.12 + i/nDrops) % 1) * total;
+    // trova il punto lungo la polilinea a distanza u
+    let acc=0, px=dl.points[0][0], py=dl.points[0][1];
+    for(let j=1;j<dl.points.length;j++){
+      const [x1,y1]=dl.points[j-1], [x2,y2]=dl.points[j];
+      const segLen = Math.hypot(x2-x1,y2-y1);
+      if(u <= acc+segLen){
+        const t = segLen>0 ? (u-acc)/segLen : 0;
+        px = x1+(x2-x1)*t; py = y1+(y2-y1)*t;
+        break;
+      }
+      acc += segLen;
+    }
+    const bob = Math.sin(tSec*6 + i)*2;
+    ctx.beginPath();
+    ctx.arc(px, py+2+Math.abs(bob), 1.8, 0, 7);
+    ctx.fillStyle='rgba(200,235,255,0.85)';
+    ctx.fill();
+  }
+}
+
+/* ---------- loop di rendering unico e robusto ----------
+   Ridisegna continuamente finché la Mappa 2D (Gestione o Home) è visibile.
+   Nessuna logica di avvio/arresto legata alle zone: elimina i casi limite
+   in cui l'animazione non partiva. Costo trascurabile per un canvas così semplice. */
+function needsMapRedraw(){
+  return document.getElementById('screen-manage').classList.contains('active')
+      && document.getElementById('view-mappa').classList.contains('active')
+      && !mode3D;
+}
+function mapRenderLoop(){
+  if(needsMapRedraw()) drawMap();
+  requestAnimationFrame(mapRenderLoop);
+}
+requestAnimationFrame(mapRenderLoop);
+
+/* ---------- inspector panel ---------- */
+function renderInspector(){
+  const empty = document.getElementById('inspectorEmpty');
+  const body = document.getElementById('inspectorBody');
+  if(!selected){ empty.style.display='block'; body.innerHTML=''; return; }
+  empty.style.display='none';
+
+  if(selected.kind==='sprinkler'){
+    const sp = state.sprinklers.find(s=>s.id===selected.id);
+    if(!sp){ body.innerHTML=''; return; }
+    const models = allModels();
+    const model = getModel(sp.modelId);
+    body.innerHTML = `
+      <div class="field"><label>Nome</label><input type="text" id="fName" value="${escapeHtml(sp.name)}"></div>
+      <div class="field"><label>Zona</label>
+        <select id="fZone">${state.zones.map(z=>`<option value="${z.id}" ${z.id===sp.zoneId?'selected':''}>${escapeHtml(z.name)}</option>`).join('')}${state.zones.length===0?'<option value="">— crea una zona in "Zone" —</option>':''}</select>
+      </div>
+      <div class="field"><label>Modello irrigatore</label>
+        <select id="fModel">${models.map(m=>`<option value="${m.id}" ${m.id===sp.modelId?'selected':''}>${escapeHtml(m.brand+' '+m.model)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Ugello / variante</label>
+        <select id="fNozzle">${(model?model.nozzles:[]).map(n=>`<option value="${n.id}" ${n.id===sp.nozzleId?'selected':''}>${escapeHtml(n.id)}</option>`).join('')}</select>
+      </div>
+      ${model && model.datasheetUrl ? `<div class="small" style="margin:-4px 0 10px;"><a href="${model.datasheetUrl}" target="_blank" rel="noopener">📄 Vedi scheda tecnica ufficiale ↗</a></div>` : ''}
+      ${sp.type==='drip' ? `
+        <div class="field-row">
+          <div class="field"><label>N. gocciolatori</label><input type="number" id="fEmitters" value="${sp.numEmitters||1}" min="1"></div>
+          <div class="field"><label>Portata cad. (l/h)</label><input type="number" id="fEmitterFlow" value="${sp.flowPerEmitterLh||4}" min="0.5" step="0.5"></div>
+        </div>
+      ` : `
+        <div class="field-row">
+          <div class="field"><label>Arco inizio (°)</label><input type="number" id="fA0" value="${sp.angleStart}" min="0" max="360"></div>
+          <div class="field"><label>Arco fine (°)</label><input type="number" id="fA1" value="${sp.angleEnd}" min="0" max="360"></div>
+        </div>
+        <div class="field"><label>Rotazione (°)</label><input type="range" id="fRot" min="0" max="360" value="${sp.rotation}"></div>
+      `}
+      <div class="small muted" id="flowPreview" style="margin:10px 0;"></div>
+      <div class="row"><button class="danger sm" id="fDelete">🗑 Elimina irrigatore</button></div>
+    `;
+    const refreshFlow = ()=>{
+      const zone = zoneById(sp.zoneId);
+      const f = computeSprinklerFlowLmin(sp, zone?zone.pressureBar:null).toFixed(2);
+      const r = sp.type==='drip' ? '—' : computeSprinklerRadiusM(sp, zone?zone.pressureBar:null).toFixed(1);
+      document.getElementById('flowPreview').textContent = `Portata stimata: ${f} l/min · Gittata stimata: ${r} m`;
+    };
+    refreshFlow();
+    document.getElementById('fName').oninput = e=>{ sp.name=e.target.value; drawMap(); queueSave(); };
+    document.getElementById('fZone').onchange = e=>{ sp.zoneId=e.target.value; refreshFlow(); drawMap(); queueSave(); renderZones(); };
+    document.getElementById('fModel').onchange = e=>{
+      sp.modelId = e.target.value;
+      const m = getModel(sp.modelId);
+      sp.type = m.type; sp.scaleWithArc = m.scaleWithArc;
+      sp.nozzleId = m.nozzles[0].id;
+      renderInspector(); drawMap(); queueSave();
+    };
+    if(document.getElementById('fNozzle')) document.getElementById('fNozzle').onchange = e=>{ sp.nozzleId=e.target.value; refreshFlow(); drawMap(); queueSave(); };
+    if(sp.type==='drip'){
+      document.getElementById('fEmitters').oninput = e=>{ sp.numEmitters=parseFloat(e.target.value)||0; refreshFlow(); queueSave(); };
+      document.getElementById('fEmitterFlow').oninput = e=>{ sp.flowPerEmitterLh=parseFloat(e.target.value)||0; refreshFlow(); queueSave(); };
+    } else {
+      document.getElementById('fA0').oninput = e=>{ sp.angleStart=parseFloat(e.target.value)||0; refreshFlow(); drawMap(); queueSave(); };
+      document.getElementById('fA1').oninput = e=>{ sp.angleEnd=parseFloat(e.target.value)||0; refreshFlow(); drawMap(); queueSave(); };
+      document.getElementById('fRot').oninput = e=>{ sp.rotation=parseFloat(e.target.value)||0; drawMap(); queueSave(); };
+    }
+    document.getElementById('fDelete').onclick = ()=>{
+      state.sprinklers = state.sprinklers.filter(s=>s.id!==sp.id);
+      selectItem(null,null); queueSave();
+    };
+  }
+
+  else if(selected.kind==='sensor'){
+    const se = state.sensors.find(s=>s.id===selected.id);
+    if(!se){ body.innerHTML=''; return; }
+    const domainMap = {meteo:'weather', pioggia:'binary_sensor', umidita_suolo:'sensor', temperatura:'sensor'};
+    const candidates = haConnected ? entitiesByDomain(domainMap[se.kind]) : [];
+    body.innerHTML = `
+      <div class="field"><label>Nome</label><input type="text" id="sName" value="${escapeHtml(se.name)}"></div>
+      <div class="field"><label>Tipo sensore</label>
+        <select id="sKind">
+          <option value="meteo" ${se.kind==='meteo'?'selected':''}>Centralina meteo</option>
+          <option value="pioggia" ${se.kind==='pioggia'?'selected':''}>Sensore pioggia</option>
+          <option value="umidita_suolo" ${se.kind==='umidita_suolo'?'selected':''}>Umidità suolo</option>
+          <option value="temperatura" ${se.kind==='temperatura'?'selected':''}>Temperatura</option>
+        </select>
+      </div>
+      <div class="field"><label>Entità Home Assistant</label>
+        <select id="sEntity">
+          <option value="">${haConnected? '— seleziona entità —':'— connetti HA in Impostazioni —'}</option>
+          ${candidates.map(e=>`<option value="${e.entity_id}" ${e.entity_id===se.entityId?'selected':''}>${escapeHtml((e.attributes&&e.attributes.friendly_name)||e.entity_id)} (${e.entity_id})</option>`).join('')}
+        </select>
+      </div>
+      ${se.kind==='umidita_suolo' ? `<div class="field"><label>Influenza zona</label>
+        <select id="sZone"><option value="">— nessuna —</option>${state.zones.map(z=>`<option value="${z.id}" ${z.id===se.affectsZoneId?'selected':''}>${escapeHtml(z.name)}</option>`).join('')}</select></div>` : ''}
+      <div class="row"><button class="danger sm" id="sDelete">🗑 Elimina sensore</button></div>
+    `;
+    document.getElementById('sName').oninput = e=>{ se.name=e.target.value; drawMap(); queueSave(); };
+    document.getElementById('sKind').onchange = e=>{ se.kind=e.target.value; se.entityId=''; renderInspector(); drawMap(); queueSave(); };
+    document.getElementById('sEntity').onchange = e=>{ se.entityId=e.target.value; queueSave(); };
+    if(document.getElementById('sZone')) document.getElementById('sZone').onchange = e=>{ se.affectsZoneId=e.target.value; queueSave(); };
+    document.getElementById('sDelete').onclick = ()=>{
+      state.sensors = state.sensors.filter(s=>s.id!==se.id);
+      selectItem(null,null); queueSave();
+    };
+  }
+
+  else if(selected.kind==='area'){
+    const a = state.areas.find(a=>a.id===selected.id);
+    if(!a){ body.innerHTML=''; return; }
+    body.innerHTML = `
+      <div class="field"><label>Nome</label><input type="text" id="aName" value="${escapeHtml(a.name)}"></div>
+      <div class="field"><label>Tipo di terreno / fondo</label>
+        <select id="aType">
+          <option value="prato" ${a.type==='prato'?'selected':''}>Prato</option>
+          <option value="ghiaia" ${a.type==='ghiaia'?'selected':''}>Ghiaia</option>
+          <option value="terra" ${a.type==='terra'?'selected':''}>Terra</option>
+          <option value="aiuola" ${a.type==='aiuola'?'selected':''}>Aiuola</option>
+        </select>
+      </div>
+      <div class="field"><label>Colore (opzionale, sovrascrive il colore tipo)</label><input type="text" id="aColor" value="${a.color||''}" placeholder="es. #6ec178"></div>
+      <div class="row"><button class="danger sm" id="aDelete">🗑 Elimina area</button></div>
+    `;
+    document.getElementById('aName').oninput = e=>{ a.name=e.target.value; drawMap(); queueSave(); };
+    document.getElementById('aType').onchange = e=>{ a.type=e.target.value; drawMap(); queueSave(); };
+    document.getElementById('aColor').oninput = e=>{ a.color=e.target.value; drawMap(); queueSave(); };
+    document.getElementById('aDelete').onclick = ()=>{
+      state.areas = state.areas.filter(x=>x.id!==a.id);
+      selectItem(null,null); queueSave();
+    };
+  }
+
+  else if(selected.kind==='dripline'){
+    const dl = state.driplines.find(d=>d.id===selected.id);
+    if(!dl){ body.innerHTML=''; return; }
+    const models = allDriplineModels();
+    const model = getDriplineModel(dl.modelId);
+    const lengthM = computeDriplineLengthM(dl);
+    body.innerHTML = `
+      <div class="field"><label>Nome</label><input type="text" id="dName" value="${escapeHtml(dl.name)}"></div>
+      <div class="field"><label>Zona</label>
+        <select id="dZone">${state.zones.map(z=>`<option value="${z.id}" ${z.id===dl.zoneId?'selected':''}>${escapeHtml(z.name)}</option>`).join('')}${state.zones.length===0?'<option value="">— crea una zona in "Zone" —</option>':''}</select>
+      </div>
+      <div class="field"><label>Prodotto</label>
+        <select id="dModel">${models.map(m=>`<option value="${m.id}" ${m.id===dl.modelId?'selected':''}>${escapeHtml(m.brand+' '+m.model)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Variante (spaziatura / portata gocciolatore)</label>
+        <select id="dVariant">${(model?model.variants:[]).map(v=>`<option value="${v.id}" ${v.id===dl.variantId?'selected':''}>${escapeHtml(v.id)} — ${v.flowPerMeterLh} l/h·m</option>`).join('')}</select>
+      </div>
+      ${model && model.datasheetUrl ? `<div class="small" style="margin:-4px 0 10px;"><a href="${model.datasheetUrl}" target="_blank" rel="noopener">📄 Vedi scheda tecnica ufficiale ↗</a></div>` : ''}
+      <div class="small muted" id="dFlowPreview" style="margin:10px 0;"></div>
+      <div class="row"><button class="danger sm" id="dDelete">🗑 Elimina tubo gocciolante</button></div>
+    `;
+    const refreshDFlow = ()=>{
+      const f = computeDriplineFlowLmin(dl).toFixed(2);
+      const len = computeDriplineLengthM(dl).toFixed(1);
+      document.getElementById('dFlowPreview').textContent = `Lunghezza: ${len} m · Portata stimata: ${f} l/min`;
+    };
+    refreshDFlow();
+    document.getElementById('dName').oninput = e=>{ dl.name=e.target.value; drawMap(); queueSave(); };
+    document.getElementById('dZone').onchange = e=>{ dl.zoneId=e.target.value; drawMap(); queueSave(); renderZones(); };
+    document.getElementById('dModel').onchange = e=>{
+      dl.modelId = e.target.value;
+      const m = getDriplineModel(dl.modelId);
+      dl.variantId = m.variants[0].id;
+      renderInspector(); drawMap(); queueSave();
+    };
+    document.getElementById('dVariant').onchange = e=>{ dl.variantId=e.target.value; refreshDFlow(); queueSave(); };
+    document.getElementById('dDelete').onclick = ()=>{
+      state.driplines = state.driplines.filter(d=>d.id!==dl.id);
+      selectItem(null,null); queueSave();
+    };
+  }
+
+  else if(selected.kind==='decor'){
+    const d = state.decor.find(x=>x.id===selected.id);
+    if(!d){ body.innerHTML=''; return; }
+    body.innerHTML = `
+      <div class="field"><label>Nome</label><input type="text" id="vName" value="${escapeHtml(d.name)}"></div>
+      <div class="field"><label>Tipo</label>
+        <select id="vKind">
+          <option value="albero" ${d.kind==='albero'?'selected':''}>🌳 Albero</option>
+          <option value="siepe" ${d.kind==='siepe'?'selected':''}>🌿 Siepe</option>
+          <option value="cespuglio" ${d.kind==='cespuglio'?'selected':''}>🪴 Cespuglio</option>
+          <option value="pianta" ${d.kind==='pianta'?'selected':''}>🌱 Pianta</option>
+        </select>
+      </div>
+      <div class="field"><label>Dimensione</label><input type="range" id="vSize" min="0.5" max="2.5" step="0.1" value="${d.size||1}"></div>
+      <p class="help">Solo decorativo: non collegato a irrigazione o entità HA.</p>
+      <div class="row"><button class="danger sm" id="vDelete">🗑 Elimina</button></div>
+    `;
+    document.getElementById('vName').oninput = e=>{ d.name=e.target.value; drawMap(); queueSave(); };
+    document.getElementById('vKind').onchange = e=>{ d.kind=e.target.value; drawMap(); queueSave(); };
+    document.getElementById('vSize').oninput = e=>{ d.size=parseFloat(e.target.value)||1; drawMap(); queueSave(); };
+    document.getElementById('vDelete').onclick = ()=>{
+      state.decor = state.decor.filter(x=>x.id!==d.id);
+      selectItem(null,null); queueSave();
+    };
+  }
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+document.getElementById('btnClearMap').onclick = ()=>{
+  if(!confirm('Svuotare completamente la mappa (aree, irrigatori, tubi gocciolanti, vegetazione, sensori)?')) return;
+  state.areas=[]; state.sprinklers=[]; state.sensors=[]; state.driplines=[]; state.decor=[];
+  selectItem(null,null); queueSave(); drawMap();
+};
+
+function renderLegend(){
+  const el = document.getElementById('legendZones');
+  el.innerHTML = state.zones.map(z=>`<div class="legend-item"><span class="swatch" style="background:${z.color}"></span>${escapeHtml(z.name)}</div>`).join('') || '<div class="small muted">Nessuna zona creata</div>';
+}
+
+/* ============================================================
+   ZONE & PUMP VIEW
+   ============================================================ */
+document.getElementById('btnAddZone').onclick = ()=>{
+  const color = ZONE_COLORS[state.zones.length % ZONE_COLORS.length];
+  state.zones.push({id:uid(), name:'Zona '+(state.zones.length+1), color, relayEntity:'', pressureBar:3});
+  renderZones(); renderLegend(); queueSave();
+};
+function renderZones(){
+  document.getElementById('zoneCount').textContent = state.zones.length;
+  const wrap = document.getElementById('zoneList');
+  if(state.zones.length===0){
+    wrap.innerHTML = '<div class="empty">Nessuna zona. Aggiungine una per iniziare.</div>';
+    renderLegend();
+    if(typeof renderHomeDashboard==='function') renderHomeDashboard();
+    return;
+  }
+  const switches = haConnected ? [...entitiesByDomain('switch'), ...entitiesByDomain('input_boolean')] : [];
+  wrap.innerHTML = state.zones.map(z=>{
+    const flow = zoneTotalFlow(z.id);
+    const pct = Math.min(100, (flow / (state.pump.maxFlowLmin||1))*100);
+    const over = flow > (state.pump.maxFlowLmin||9999);
+    const count = state.sprinklers.filter(s=>s.zoneId===z.id).length;
+    return `<div class="card" style="margin-bottom:10px;border-color:${z.color}33;">
+      <div class="row">
+        <span class="swatch" style="background:${z.color};width:14px;height:14px;border-radius:4px;"></span>
+        <input type="text" data-zid="${z.id}" class="zName" value="${escapeHtml(z.name)}" style="max-width:220px;">
+        <span class="pill">${count} irrigatori</span>
+        ${over?'<span class="pill danger">⚠ portata &gt; pompa</span>':''}
+        <span class="spacer"></span>
+        <button class="danger sm" data-zid="${z.id}" data-act="del">🗑</button>
+      </div>
+      <div class="field-row3" style="margin-top:10px;">
+        <div class="field"><label>Entità relè valvola (HA)</label>
+          <select data-zid="${z.id}" class="zEntity">
+            <option value="">${haConnected?'— seleziona —':'connetti HA in Impostazioni'}</option>
+            ${switches.map(e=>`<option value="${e.entity_id}" ${e.entity_id===z.relayEntity?'selected':''}>${escapeHtml((e.attributes&&e.attributes.friendly_name)||e.entity_id)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Pressione di esercizio (bar)</label>
+          <input type="number" step="0.1" min="0.5" data-zid="${z.id}" class="zPressure" value="${z.pressureBar}">
+        </div>
+        <div class="field"><label>Colore</label><input type="text" data-zid="${z.id}" class="zColor" value="${z.color}"></div>
+      </div>
+      <div class="small muted">Portata stimata zona: ${flow.toFixed(1)} l/min di ${state.pump.maxFlowLmin} l/min pompa</div>
+      <div class="flow-bar"><div style="width:${pct}%;background:${over?'linear-gradient(90deg,#e0a83a,#e0645a)':''}"></div></div>
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('.zName').forEach(inp=> inp.oninput = e=>{ zoneById(e.target.dataset.zid).name=e.target.value; renderLegend(); drawMap(); queueSave(); });
+  wrap.querySelectorAll('.zEntity').forEach(sel=> sel.onchange = e=>{ zoneById(e.target.dataset.zid).relayEntity=e.target.value; queueSave(); });
+  wrap.querySelectorAll('.zPressure').forEach(inp=> inp.oninput = e=>{ zoneById(e.target.dataset.zid).pressureBar=parseFloat(e.target.value)||3; renderZones(); queueSave(); });
+  wrap.querySelectorAll('.zColor').forEach(inp=> inp.oninput = e=>{ zoneById(e.target.dataset.zid).color=e.target.value; renderLegend(); drawMap(); queueSave(); });
+  wrap.querySelectorAll('[data-act=del]').forEach(btn=> btn.onclick = e=>{
+    const zid = e.target.dataset.zid;
+    if(!confirm('Eliminare questa zona? Gli irrigatori assegnati resteranno senza zona.')) return;
+    state.zones = state.zones.filter(z=>z.id!==zid);
+    state.sprinklers.forEach(s=>{ if(s.zoneId===zid) s.zoneId=''; });
+    delete state.timers[zid];
+    renderZones(); renderLegend(); drawMap(); queueSave();
+  });
+  renderLegend();
+  if(typeof renderHomeDashboard==='function') renderHomeDashboard();
+}
+document.getElementById('pumpEntity').onchange = e=>{ state.pump.relayEntity=e.target.value; queueSave(); };
+document.getElementById('pumpMaxFlow').oninput = e=>{ state.pump.maxFlowLmin=parseFloat(e.target.value)||60; renderZones(); queueSave(); };
+document.getElementById('pumpMaxPressure').oninput = e=>{ state.pump.maxPressureBar=parseFloat(e.target.value)||4; queueSave(); };
+document.getElementById('pumpFlowSensor').onchange = e=>{ state.pump.flowSensorEntity=e.target.value; queueSave(); };
+
+/* ============================================================
+   MANUAL CONTROL
+   ============================================================ */
+let activeZones = new Set(); // zoneIds currently "on" per this app's own tracking
+let pumpOn = false;
+
+async function setPump(on){
+  if(state.pump.relayEntity && haConnected){
+    try{ await haCallService(state.pump.relayEntity.split('.')[0], on?'turn_on':'turn_off', state.pump.relayEntity); }
+    catch(e){ toast('Errore comando pompa: '+e.message,'err'); return false; }
+  }
+  pumpOn = on;
+  document.getElementById('pumpStateLabel').textContent = 'Stato: '+(on?'ACCESA':'spenta');
+  document.getElementById('btnPumpToggle').textContent = on?'Ferma pompa':'Avvia pompa';
+  return true;
+}
+async function setZone(zoneId, on){
+  const z = zoneById(zoneId);
+  if(!z) return false;
+  if(z.relayEntity && haConnected){
+    try{ await haCallService(z.relayEntity.split('.')[0], on?'turn_on':'turn_off', z.relayEntity); }
+    catch(e){ toast('Errore comando zona '+z.name+': '+e.message,'err'); return false; }
+  }
+  if(on) activeZones.add(zoneId); else activeZones.delete(zoneId);
+  return true;
+}
+async function startZoneManual(zoneId){
+  if(!pumpOn) await setPump(true);
+  await setZone(zoneId, true);
+  renderManualControl();
+}
+async function stopZoneManual(zoneId){
+  await setZone(zoneId, false);
+  if(activeZones.size===0) await setPump(false);
+  renderManualControl();
+}
+document.getElementById('btnPumpToggle').onclick = ()=> setPump(!pumpOn).then(renderManualControl);
+function renderManualControl(){
+  let totalFlow=0; activeZones.forEach(zid=> totalFlow+=zoneTotalFlow(zid));
+  document.getElementById('totalFlowPill').textContent = 'Portata attiva: '+totalFlow.toFixed(1)+' l/min';
+  const grid = document.getElementById('manualZoneGrid');
+  if(state.zones.length===0){
+    grid.innerHTML='<div class="empty">Crea prima una zona nella scheda "Zone &amp; Pompa".</div>';
+    if(typeof renderHomeDashboard==='function') renderHomeDashboard();
+    return;
+  }
+  grid.innerHTML = state.zones.map(z=>{
+    const on = activeZones.has(z.id);
+    const flow = zoneTotalFlow(z.id);
+    return `<div class="card">
+      <div class="row"><span class="swatch" style="background:${z.color};width:12px;height:12px;border-radius:3px;"></span>
+        <b>${escapeHtml(z.name)}</b><span class="spacer"></span>
+        <span class="pill ${on?'leaf':''}">${on?'ATTIVA':'ferma'}</span>
+      </div>
+      <div class="small muted" style="margin:6px 0;">${flow.toFixed(1)} l/min stimati</div>
+      <button class="${on?'danger':'primary'}" style="width:100%;" data-zid="${z.id}" data-act="${on?'stop':'start'}">${on?'■ Ferma zona':'▶ Avvia zona'}</button>
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('button').forEach(btn=>{
+    btn.onclick = ()=> btn.dataset.act==='start' ? startZoneManual(btn.dataset.zid) : stopZoneManual(btn.dataset.zid);
+  });
+  if(typeof renderHomeDashboard==='function') renderHomeDashboard();
+}
+
+/* ============================================================
+   TIMER PROGRAM
+   ============================================================ */
+let timerRunning = false;
+let timerAbort = false;
+function renderTimer(){
+  const wrap = document.getElementById('timerList');
+  if(state.zones.length===0){ wrap.innerHTML='<div class="empty">Crea prima una zona.</div>'; return; }
+  wrap.innerHTML = state.zones.map(z=>{
+    const min = state.timers[z.id] ?? 10;
+    return `<div class="timer-row">
+      <span class="swatch" style="background:${z.color};width:12px;height:12px;border-radius:3px;"></span>
+      <div>${escapeHtml(z.name)}</div>
+      <input type="number" min="1" max="180" value="${min}" data-zid="${z.id}" class="tMin">
+      <div class="small muted">minuti</div>
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('.tMin').forEach(inp=> inp.oninput = e=>{
+    state.timers[e.target.dataset.zid] = parseInt(e.target.value)||1; queueSave();
+  });
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+async function runTimerProgram(){
+  if(state.zones.length===0){ toast('Nessuna zona configurata','err'); return; }
+  timerRunning=true; timerAbort=false;
+  document.getElementById('btnStartTimer').disabled=true;
+  document.getElementById('btnStopTimer').disabled=false;
+  const sequential = document.getElementById('timerSequential').checked;
+  const targets = state.zones.filter(z=> (state.timers[z.id]??10) > 0);
+  document.getElementById('timerStatusPill').textContent = 'In esecuzione…';
+  await setPump(true);
+  if(sequential){
+    for(const z of targets){
+      if(timerAbort) break;
+      document.getElementById('timerStatusPill').textContent = 'Zona attiva: '+z.name;
+      await setZone(z.id, true);
+      renderManualControl();
+      const mins = state.timers[z.id]??10;
+      for(let s=0;s<mins*60 && !timerAbort;s++) await sleep(1000);
+      await setZone(z.id, false);
+    }
+  } else {
+    for(const z of targets) await setZone(z.id, true);
+    renderManualControl();
+    const maxMin = Math.max(...targets.map(z=>state.timers[z.id]??10),0);
+    for(let s=0;s<maxMin*60 && !timerAbort;s++) await sleep(1000);
+    for(const z of targets) await setZone(z.id, false);
+  }
+  await setPump(false);
+  timerRunning=false;
+  document.getElementById('btnStartTimer').disabled=false;
+  document.getElementById('btnStopTimer').disabled=true;
+  document.getElementById('timerStatusPill').textContent = timerAbort? 'Interrotto' : 'Completato';
+  renderManualControl();
+}
+function stopTimerProgram(){
+  if(timerRunning){ timerAbort=true; }
+}
+document.getElementById('btnStartTimer').onclick = runTimerProgram;
+document.getElementById('btnStopTimer').onclick = async ()=>{
+  stopTimerProgram();
+  for(const zid of [...activeZones]) await setZone(zid,false);
+  await setPump(false);
+  renderManualControl();
+};
+
+/* ============================================================
+   AUTOMATIC MODE
+   ============================================================ */
+const DAY_KEYS = ['lun','mar','mer','gio','ven','sab','dom'];
+function renderAutoDays(){
+  const wrap = document.getElementById('autoDays');
+  wrap.innerHTML = DAY_KEYS.map(d=>`<label style="margin:0;display:flex;gap:4px;align-items:center;text-transform:capitalize;">
+    <input type="checkbox" data-day="${d}" ${state.auto.days[d]?'checked':''} style="width:auto;">${d}</label>`).join('');
+  wrap.querySelectorAll('input').forEach(cb=> cb.onchange = e=>{ state.auto.days[e.target.dataset.day]=e.target.checked; queueSave(); });
+}
+function bindAutoFields(){
+  document.getElementById('autoEnabled').checked = state.auto.enabled;
+  document.getElementById('autoRainThreshold').value = state.auto.rainThreshold;
+  document.getElementById('autoStartTime').value = state.auto.startTime;
+  document.getElementById('autoTempLow').value = state.auto.tempLow;
+  document.getElementById('autoTempHigh').value = state.auto.tempHigh;
+  document.getElementById('autoSoilThreshold').value = state.auto.soilThreshold;
+  document.getElementById('autoEnabled').onchange = e=>{ state.auto.enabled=e.target.checked; queueSave(); };
+  document.getElementById('autoWeatherEntity').onchange = e=>{ state.auto.weatherEntity=e.target.value; queueSave(); };
+  document.getElementById('autoRainSensor').onchange = e=>{ state.auto.rainSensor=e.target.value; queueSave(); };
+  document.getElementById('autoRainThreshold').oninput = e=>{ state.auto.rainThreshold=parseFloat(e.target.value)||0; queueSave(); };
+  document.getElementById('autoStartTime').oninput = e=>{ state.auto.startTime=e.target.value; queueSave(); };
+  document.getElementById('autoTempLow').oninput = e=>{ state.auto.tempLow=parseFloat(e.target.value)||0; queueSave(); };
+  document.getElementById('autoTempHigh').oninput = e=>{ state.auto.tempHigh=parseFloat(e.target.value)||30; queueSave(); };
+  document.getElementById('autoSoilThreshold').oninput = e=>{ state.auto.soilThreshold=parseFloat(e.target.value)||55; queueSave(); };
+}
+function logAuto(msg, kind){
+  const wrap = document.getElementById('autoLog');
+  if(wrap.querySelector('.empty')) wrap.innerHTML='';
+  const el = document.createElement('div');
+  el.className='log-entry '+(kind||'');
+  el.textContent = new Date().toLocaleTimeString()+' — '+msg;
+  wrap.prepend(el);
+}
+async function runAutoCheck(){
+  if(!state.auto.enabled){ toast('Attiva prima la modalità automatica','err'); return; }
+  logAuto('Avvio verifica condizioni…');
+  if(state.auto.rainSensor && haConnected){
+    const st = await haGetState(state.auto.rainSensor);
+    if(st && st.state==='on'){ logAuto('Pioggia rilevata dal sensore — irrigazione saltata per tutte le zone.','skip'); return; }
+  }
+  let rainProb = null, temp=null, humidity=null;
+  if(state.auto.weatherEntity && haConnected){
+    const st = await haGetState(state.auto.weatherEntity);
+    if(st){
+      temp = st.attributes.temperature;
+      humidity = st.attributes.humidity;
+      if(Array.isArray(st.attributes.forecast) && st.attributes.forecast[0]){
+        rainProb = st.attributes.forecast[0].precipitation_probability ?? null;
+      }
+      logAuto('Meteo: condizione="'+st.state+'", temp='+temp+'°C, umidità='+humidity+'%'+(rainProb!=null?', prob. pioggia='+rainProb+'%':''));
+    }
+  }
+  if(rainProb!=null && rainProb >= state.auto.rainThreshold){
+    logAuto('Probabilità di pioggia ('+rainProb+'%) oltre soglia ('+state.auto.rainThreshold+'%) — irrigazione saltata.','skip');
+    return;
+  }
+  let factor = 1;
+  if(temp!=null){
+    if(temp < state.auto.tempLow) factor -= 0.25;
+    if(temp > state.auto.tempHigh) factor += 0.25;
+  }
+  if(humidity!=null){ factor -= (humidity-50)/200; }
+  factor = Math.max(0.4, Math.min(1.6, factor));
+  logAuto('Fattore di correzione durata: ×'+factor.toFixed(2));
+
+  for(const z of state.zones){
+    const baseMin = state.timers[z.id] ?? 10;
+    let skip=false, reason='';
+    for(const se of state.sensors){
+      if(se.kind==='umidita_suolo' && se.affectsZoneId===z.id && se.entityId && haConnected){
+        const st = await haGetState(se.entityId);
+        const val = st ? parseFloat(st.state) : null;
+        if(val!=null && val >= state.auto.soilThreshold){ skip=true; reason='umidità suolo '+val+'% ≥ soglia '+state.auto.soilThreshold+'%'; }
+      }
+    }
+    if(skip){ logAuto('Zona "'+z.name+'" saltata: '+reason,'skip'); continue; }
+    const finalMin = Math.max(1, Math.round(baseMin*factor));
+    logAuto('Zona "'+z.name+'" → programmata per '+finalMin+' min (base '+baseMin+' min).','run');
+  }
+  logAuto('Verifica completata.');
+}
+document.getElementById('btnRunAutoCheck').onclick = runAutoCheck;
+
+function buildAutomationYaml(){
+  const zones = state.zones.map(z=>{
+    const min = state.timers[z.id] ?? 10;
+    return `      - service: switch.turn_on
+        target:
+          entity_id: ${z.relayEntity || 'switch.ZONA_DA_CONFIGURARE'}
+      - delay: "00:${String(min).padStart(2,'0')}:00"
+      - service: switch.turn_off
+        target:
+          entity_id: ${z.relayEntity || 'switch.ZONA_DA_CONFIGURARE'}`;
+  }).join('\n');
+  return `alias: Irrigazione automatica (generato da IrrigaHA)
+description: Programma di irrigazione con controllo meteo e pioggia
+trigger:
+  - platform: time
+    at: "${state.auto.startTime}:00"
+condition:
+  - condition: state
+    entity_id: ${state.auto.rainSensor || 'binary_sensor.PIOGGIA_DA_CONFIGURARE'}
+    state: "off"
+  - condition: numeric_state
+    entity_id: ${state.auto.weatherEntity || 'weather.METEO_DA_CONFIGURARE'}
+    attribute: precipitation_probability
+    below: ${state.auto.rainThreshold}
+action:
+  - service: switch.turn_on
+    target:
+      entity_id: ${state.pump.relayEntity || 'switch.POMPA_DA_CONFIGURARE'}
+  - sequence:
+${zones || '      - service: switch.turn_on\n        target:\n          entity_id: switch.ZONA_DA_CONFIGURARE'}
+  - service: switch.turn_off
+    target:
+      entity_id: ${state.pump.relayEntity || 'switch.POMPA_DA_CONFIGURARE'}
+mode: single
+`;
+}
+document.getElementById('btnExportYaml').onclick = ()=>{
+  const yaml = buildAutomationYaml();
+  const blob = new Blob([yaml], {type:'text/yaml'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download='irrigazione_automazione.yaml'; a.click();
+  URL.revokeObjectURL(url);
+  toast('YAML generato — importalo in HA come nuova automazione (modalità YAML) e verifica gli entity_id.','ok');
+};
+
+/* ============================================================
+   MODEL DATABASE VIEW
+   ============================================================ */
+function renderModelTable(){
+  const body = document.getElementById('modelTableBody');
+  const rows = [];
+  allModels().forEach(m=>{
+    m.nozzles.forEach((n,idx)=>{
+      const isCustom = state.customModels.some(c=>c.id===m.id);
+      rows.push(`<tr>
+        <td>${idx===0?escapeHtml(m.brand):''}</td>
+        <td>${idx===0?escapeHtml(m.model):''}</td>
+        <td>${idx===0?`<span class="pill">${m.type}</span>`:''}</td>
+        <td>${escapeHtml(n.id)}</td>
+        <td>${n.pressureBar}</td>
+        <td>${n.flow360}</td>
+        <td>${n.radiusM}</td>
+        <td class="small muted">${idx===0?escapeHtml(m.source||''):''}</td>
+        <td>${idx===0 && isCustom ? `<button class="danger sm" data-mid="${m.id}" data-act="delmodel">🗑</button>`:''}</td>
+      </tr>`);
+    });
+  });
+  body.innerHTML = rows.join('');
+  body.querySelectorAll('[data-act=delmodel]').forEach(btn=> btn.onclick = ()=>{
+    if(!confirm('Eliminare questo modello personalizzato?')) return;
+    state.customModels = state.customModels.filter(m=>m.id!==btn.dataset.mid);
+    renderModelTable(); queueSave();
+  });
+}
+document.getElementById('btnAddModel').onclick = ()=>{
+  const brand = prompt('Marca:'); if(!brand) return;
+  const model = prompt('Modello:'); if(!model) return;
+  const type = prompt('Tipo (rotor / spray / drip):','rotor');
+  const pressureBar = parseFloat(prompt('Pressione nominale (bar):','3'))||3;
+  const flow360 = parseFloat(prompt('Portata nominale equivalente 360° (l/min):','10'))||10;
+  const radiusM = parseFloat(prompt('Gittata nominale (m):','9'))||9;
+  const m = {id:uid(), brand, model, type, scaleWithArc: type==='spray', source:'Personalizzato',
+    nozzles:[{id:'Standard', pressureBar, flow360, radiusM}]};
+  state.customModels.push(m);
+  renderModelTable(); queueSave();
+  toast('Modello aggiunto al database','ok');
+};
+
+/* ============================================================
+   IMPOSTAZIONI VIEW
+   ============================================================ */
+document.getElementById('btnHaConnect').onclick = async ()=>{
+  state.ha.baseUrl = document.getElementById('haUrl').value.trim();
+  state.ha.token = document.getElementById('haToken').value.trim();
+  queueSave();
+  await haTestAndLoad();
+};
+
+/* ============================================================
+   3D ENGINE (Three.js) — condiviso tra Home dashboard e Gestione
+   ============================================================ */
+let mode3D = false, dirty3D = true;
+let renderer3D=null, scene3D=null, camera3D=null, controls3D=null, group3D=null;
+let particleSystems3D = {};       // irrigatori
+let driplineParticles3D = {};     // tubi gocciolanti
+let current3DContainer = null;
+let origin3D = {cx:0,cy:0};
+
+function toWorld3D(px,py){
+  return [ (px-origin3D.cx)*state.metersPerPixel, (py-origin3D.cy)*state.metersPerPixel ];
+}
+
+function init3D(){
+  renderer3D = new THREE.WebGLRenderer({antialias:true});
+  renderer3D.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+
+  scene3D = new THREE.Scene();
+  scene3D.background = new THREE.Color(0x0c1512);
+  scene3D.fog = new THREE.Fog(0x0c1512, 25, 130);
+
+  camera3D = new THREE.PerspectiveCamera(50, 1, 0.1, 500);
+  camera3D.position.set(16,15,16);
+
+  controls3D = new THREE.OrbitControls(camera3D, renderer3D.domElement);
+  controls3D.target.set(0,0,0);
+  controls3D.maxPolarAngle = Math.PI*0.49;
+  controls3D.minDistance = 3; controls3D.maxDistance = 140;
+  controls3D.enableDamping = true; controls3D.dampingFactor = 0.08;
+
+  const hemi = new THREE.HemisphereLight(0xbfe3d0, 0x16241f, 0.95);
+  scene3D.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff2d8, 1.05);
+  sun.position.set(22,32,12);
+  scene3D.add(sun);
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(400,400),
+    new THREE.MeshStandardMaterial({color:0x1c3327, roughness:1})
+  );
+  ground.rotation.x = -Math.PI/2;
+  scene3D.add(ground);
+  const grid = new THREE.GridHelper(400,200,0x2c4a3d,0x18271f);
+  grid.position.y = 0.01;
+  scene3D.add(grid);
+
+  group3D = new THREE.Group();
+  scene3D.add(group3D);
+
+  requestAnimationFrame(animate3D);
+}
+
+/* Sposta il canvas 3D (unico, condiviso) nel container richiesto e lo ridimensiona */
+function attach3D(container){
+  if(!renderer3D) init3D();
+  if(current3DContainer!==container){
+    container.innerHTML='';
+    container.appendChild(renderer3D.domElement);
+    current3DContainer = container;
+    dirty3D = true;
+  }
+  resize3D();
+}
+function resize3D(){
+  if(!renderer3D || !current3DContainer) return;
+  const w = current3DContainer.clientWidth || 400;
+  const h = current3DContainer.clientHeight || Math.round(w*0.62);
+  renderer3D.setSize(w,h);
+  camera3D.aspect = w/h;
+  camera3D.updateProjectionMatrix();
+}
+window.addEventListener('resize', ()=> resize3D());
+
+function disposeObject3D(obj){
+  if(obj.geometry) obj.geometry.dispose();
+  if(obj.material){ if(Array.isArray(obj.material)) obj.material.forEach(m=>m.dispose()); else obj.material.dispose(); }
+}
+
+function cylinderBetween(p1x,p1z,p2x,p2z,y,radius,material){
+  const dx=p2x-p1x, dz=p2z-p1z;
+  const len = Math.max(0.01, Math.hypot(dx,dz));
+  const geo = new THREE.CylinderGeometry(radius,radius,len,6);
+  const mesh = new THREE.Mesh(geo, material);
+  const dir = new THREE.Vector3(dx,0,dz).normalize();
+  mesh.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir));
+  mesh.position.set((p1x+p2x)/2, y, (p1z+p2z)/2);
+  return mesh;
+}
+
+function buildDecorMesh3D(d, x, z){
+  const g = new THREE.Group();
+  const s = d.size||1;
+  if(d.kind==='albero'){
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06*s,0.09*s,0.7*s,8), new THREE.MeshStandardMaterial({color:0x6b4a30}));
+    trunk.position.y = 0.35*s; g.add(trunk);
+    const foliage = new THREE.Mesh(new THREE.ConeGeometry(0.55*s,1.1*s,9), new THREE.MeshStandardMaterial({color:0x4c9a55, roughness:0.9}));
+    foliage.position.y = 1.05*s; g.add(foliage);
+    const foliage2 = new THREE.Mesh(new THREE.ConeGeometry(0.42*s,0.8*s,9), new THREE.MeshStandardMaterial({color:0x5cae66, roughness:0.9}));
+    foliage2.position.y = 1.5*s; g.add(foliage2);
+  } else if(d.kind==='siepe'){
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.9*s,0.5*s,0.5*s), new THREE.MeshStandardMaterial({color:0x4c9a55, roughness:0.95}));
+    box.position.y = 0.25*s; g.add(box);
+  } else if(d.kind==='cespuglio'){
+    const sph = new THREE.Mesh(new THREE.SphereGeometry(0.4*s,10,8), new THREE.MeshStandardMaterial({color:0x5cae66, roughness:0.95}));
+    sph.scale.y = 0.75; sph.position.y = 0.3*s; g.add(sph);
+  } else {
+    const sph = new THREE.Mesh(new THREE.ConeGeometry(0.14*s,0.35*s,7), new THREE.MeshStandardMaterial({color:0x6fbf73}));
+    sph.position.y = 0.17*s; g.add(sph);
+  }
+  g.position.set(x,0,z);
+  return g;
+}
+
+function polylineWorldLength(worldPts){
+  let len=0;
+  for(let i=1;i<worldPts.length;i++){ const [x1,z1]=worldPts[i-1], [x2,z2]=worldPts[i]; len += Math.hypot(x2-x1,z2-z1); }
+  return len;
+}
+function pointAtWorldDistance(worldPts, dist){
+  let acc=0;
+  for(let i=1;i<worldPts.length;i++){
+    const [x1,z1]=worldPts[i-1], [x2,z2]=worldPts[i];
+    const segLen = Math.hypot(x2-x1,z2-z1);
+    if(dist<=acc+segLen || i===worldPts.length-1){
+      const t = segLen>0 ? Math.max(0,Math.min(1,(dist-acc)/segLen)) : 0;
+      return [x1+(x2-x1)*t, z1+(z2-z1)*t];
+    }
+    acc += segLen;
+  }
+  return worldPts[worldPts.length-1];
+}
+
+function rebuildStaticMeshes3D(){
+  if(!group3D) return;
+  while(group3D.children.length){ const c=group3D.children.pop(); disposeObject3D(c); }
+  particleSystems3D = {};
+  driplineParticles3D = {};
+
+  let pts=[];
+  state.areas.forEach(a=>a.points.forEach(p=>pts.push(p)));
+  state.sprinklers.forEach(s=>pts.push([s.x,s.y]));
+  state.sensors.forEach(s=>pts.push([s.x,s.y]));
+  state.driplines.forEach(d=>d.points.forEach(p=>pts.push(p)));
+  state.decor.forEach(d=>pts.push([d.x,d.y]));
+  if(pts.length===0){ origin3D={cx:canvas.width/2, cy:canvas.height/2}; return; }
+  origin3D.cx = pts.reduce((s,p)=>s+p[0],0)/pts.length;
+  origin3D.cy = pts.reduce((s,p)=>s+p[1],0)/pts.length;
+
+  // areas as flat colored patches, colore in base al tipo se non personalizzato
+  state.areas.forEach(a=>{
+    try{
+      const style = AREA_TYPE_FILL[a.type] || AREA_TYPE_FILL.prato;
+      const colorHex = a.color || style.base;
+      const shape = new THREE.Shape();
+      a.points.forEach(([px,py],i)=>{
+        const [x,z] = toWorld3D(px,py);
+        i===0 ? shape.moveTo(x,-z) : shape.lineTo(x,-z);
+      });
+      const geo = new THREE.ShapeGeometry(shape);
+      const rough = a.type==='ghiaia' ? 1 : a.type==='terra' ? 1 : 0.85;
+      const mat = new THREE.MeshStandardMaterial({color:new THREE.Color(colorHex), transparent:true, opacity:0.7, side:THREE.DoubleSide, roughness:rough});
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI/2;
+      mesh.position.y = 0.02;
+      group3D.add(mesh);
+    }catch(e){ /* skip malformed polygon */ }
+  });
+
+  // sensors as small posts
+  state.sensors.forEach(se=>{
+    const [x,z] = toWorld3D(se.x, se.y);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.5,8), new THREE.MeshStandardMaterial({color:0x2c4a54}));
+    post.position.set(x,0.25,z);
+    group3D.add(post);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.08,10,10), new THREE.MeshStandardMaterial({color:0x3fa6cf, emissive:0x1a5c74, emissiveIntensity:0.4}));
+    head.position.set(x,0.52,z);
+    group3D.add(head);
+  });
+
+  // decor: alberi, siepi, cespugli, piante (solo visivo)
+  state.decor.forEach(d=>{
+    const [x,z] = toWorld3D(d.x, d.y);
+    group3D.add(buildDecorMesh3D(d, x, z));
+  });
+
+  // driplines: catena di piccoli cilindri lungo il percorso + sistema particelle a goccia
+  state.driplines.forEach(dl=>{
+    const zone = zoneById(dl.zoneId);
+    const colorHex = zone ? zone.color : '#e0a83a';
+    const mat = new THREE.MeshStandardMaterial({color:new THREE.Color(colorHex), roughness:0.8});
+    const worldPts = dl.points.map(([px,py])=>toWorld3D(px,py));
+    for(let i=1;i<worldPts.length;i++){
+      const [x1,z1]=worldPts[i-1], [x2,z2]=worldPts[i];
+      group3D.add(cylinderBetween(x1,z1,x2,z2,0.03,0.02,mat));
+    }
+    const totalLen = polylineWorldLength(worldPts);
+    if(totalLen>0.05){
+      const N = Math.max(6, Math.min(60, Math.round(totalLen*3)));
+      const positions = new Float32Array(N*3);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+      const pmat = new THREE.PointsMaterial({color:0xbfe9ff, size:0.05, transparent:true, opacity:0.85, depthWrite:false});
+      const points = new THREE.Points(geo, pmat);
+      points.visible = false;
+      points.userData = {dl, worldPts, totalLen, offsets: Array.from({length:N}, ()=>Math.random())};
+      group3D.add(points);
+      driplineParticles3D[dl.id] = points;
+    }
+  });
+
+  // sprinklers: riser + head + particle system
+  state.sprinklers.forEach(sp=>{
+    const [x,z] = toWorld3D(sp.x, sp.y);
+    const zone = zoneById(sp.zoneId);
+    const color = new THREE.Color(zone ? zone.color : '#8fa79c');
+    const riser = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,0.35,10), new THREE.MeshStandardMaterial({color:0x33403a}));
+    riser.position.set(x,0.175,z);
+    group3D.add(riser);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.09,10,10), new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.3}));
+    head.position.set(x,0.38,z);
+    group3D.add(head);
+
+    const N = sp.type==='drip' ? 10 : 44;
+    const positions = new Float32Array(N*3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    const mat = new THREE.PointsMaterial({color:0xbfe9ff, size:sp.type==='drip'?0.045:0.07, transparent:true, opacity:0.85, depthWrite:false});
+    const points = new THREE.Points(geo, mat);
+    points.visible = false;
+    points.userData = {sp, x, z, offsets: Array.from({length:N}, ()=>Math.random())};
+    group3D.add(points);
+    particleSystems3D[sp.id] = points;
+  });
+}
+
+function updateParticles3D(tSec){
+  Object.values(particleSystems3D).forEach(points=>{
+    const sp = points.userData.sp;
+    const active = activeZones.has(sp.zoneId);
+    points.visible = active;
+    if(!active) return;
+    const zone = zoneById(sp.zoneId);
+    const rM = Math.max(0.4, computeSprinklerRadiusM(sp, zone?zone.pressureBar:null));
+    const model = getModel(sp.modelId);
+    const isRotor = model ? model.type==='rotor' : sp.type==='rotor';
+    const arcSpan = Math.max(1, sp.angleEnd - sp.angleStart);
+    let centerAngle = sp.angleStart + arcSpan/2;
+    if(sp.type!=='drip' && isRotor){
+      const period=2.5; let phase=(tSec%period)/period; if(phase>0.5) phase=1-phase; phase*=2;
+      centerAngle = sp.angleStart + phase*arcSpan;
+    }
+    const arr = points.geometry.attributes.position.array;
+    const offsets = points.userData.offsets;
+    const heightScale = sp.type==='drip' ? 0.08 : Math.min(1.3, 0.35+rM*0.05);
+    for(let i=0;i<offsets.length;i++){
+      const u = (tSec*(sp.type==='drip'?0.3:0.55) + offsets[i]) % 1;
+      let ang;
+      if(sp.type!=='drip' && isRotor){ ang = centerAngle + (offsets[i]-0.5)*16; }
+      else { ang = sp.angleStart + offsets[i]*arcSpan; }
+      const angRad = (sp.rotation+ang-90)*Math.PI/180;
+      const dist = u*rM;
+      const height = 0.38 + Math.sin(u*Math.PI)*heightScale;
+      arr[i*3]   = points.userData.x + Math.cos(angRad)*dist;
+      arr[i*3+1] = height;
+      arr[i*3+2] = points.userData.z + Math.sin(angRad)*dist;
+    }
+    points.geometry.attributes.position.needsUpdate = true;
+  });
+
+  Object.values(driplineParticles3D).forEach(points=>{
+    const dl = points.userData.dl;
+    const active = activeZones.has(dl.zoneId);
+    points.visible = active;
+    if(!active) return;
+    const {worldPts, totalLen, offsets} = points.userData;
+    const arr = points.geometry.attributes.position.array;
+    for(let i=0;i<offsets.length;i++){
+      const u = (tSec*0.08 + offsets[i]) % 1;
+      const [x,z] = pointAtWorldDistance(worldPts, u*totalLen);
+      const drip = (tSec*3 + offsets[i]*10) % 1; // caduta periodica
+      arr[i*3]=x; arr[i*3+1]=0.05 - drip*0.05; arr[i*3+2]=z;
+    }
+    points.geometry.attributes.position.needsUpdate = true;
+  });
+}
+
+function animate3D(t){
+  if(dirty3D){ rebuildStaticMeshes3D(); dirty3D=false; }
+  updateParticles3D((t||0)/1000);
+  if(controls3D) controls3D.update();
+  if(renderer3D && current3DContainer) renderer3D.render(scene3D, camera3D);
+  requestAnimationFrame(animate3D);
+}
+
+document.getElementById('view3DBtn').onclick = ()=>{
+  mode3D = true;
+  document.getElementById('view3DBtn').classList.add('active');
+  document.getElementById('view2DBtn').classList.remove('active');
+  document.getElementById('canvas2dArea').style.display='none';
+  document.getElementById('canvas3dWrap').style.display='block';
+  document.getElementById('help3d').style.display='block';
+  document.getElementById('toolHelp').style.display='none';
+  attach3D(document.getElementById('canvas3dWrap'));
+};
+document.getElementById('view2DBtn').onclick = ()=>{
+  mode3D = false;
+  document.getElementById('view2DBtn').classList.add('active');
+  document.getElementById('view3DBtn').classList.remove('active');
+  document.getElementById('canvas2dArea').style.display='block';
+  document.getElementById('canvas3dWrap').style.display='none';
+  document.getElementById('help3d').style.display='none';
+  document.getElementById('toolHelp').style.display='block';
+  drawMap();
+};
+
+/* ============================================================
+   HOME DASHBOARD
+   ============================================================ */
+const WEATHER_ICONS = {
+  'clear-night':'🌙','cloudy':'☁️','exceptional':'⚠️','fog':'🌫️','hail':'🌨️',
+  'lightning':'⛈️','lightning-rainy':'⛈️','partlycloudy':'⛅','pouring':'🌧️',
+  'rainy':'🌧️','snowy':'❄️','snowy-rainy':'🌨️','sunny':'☀️','windy':'💨','windy-variant':'💨'
+};
+async function refreshHomeWeather(){
+  const card = document.getElementById('homeWeatherCard');
+  if(!state.auto.weatherEntity || !haConnected){ card.style.display='none'; return; }
+  const st = await haGetState(state.auto.weatherEntity);
+  if(!st){ card.style.display='none'; return; }
+  card.style.display='flex';
+  document.getElementById('homeWeatherIcon').textContent = WEATHER_ICONS[st.state] || '🌤️';
+  const temp = st.attributes.temperature;
+  document.getElementById('homeWeatherTemp').textContent = (temp!=null? Math.round(temp)+'°C' : '—');
+  const hum = st.attributes.humidity;
+  document.getElementById('homeWeatherMeta').textContent = (hum!=null? 'Umidità '+hum+'%' : st.state);
+}
+function renderHomeDashboard(){
+  document.getElementById('haDotHome').className = 'dot '+(haConnected?'on':'off');
+  document.getElementById('haStatusTextHome').textContent = haConnected ? 'Home Assistant connesso' : 'Home Assistant non connesso';
+
+  document.getElementById('homeZoneCount').textContent = state.zones.length;
+  const quick = document.getElementById('homeZoneQuick');
+  quick.innerHTML = state.zones.length===0
+    ? '<div class="empty">Nessuna zona configurata ancora.</div>'
+    : state.zones.map(z=>{
+        const on = activeZones.has(z.id);
+        return `<button class="zone-quick-btn ${on?'on':''}" data-zid="${z.id}" data-act="${on?'stop':'start'}">
+          <span class="zq-name">${escapeHtml(z.name)}</span>
+          <span class="zq-state">${on?'● attiva':'ferma'} · ${zoneTotalFlow(z.id).toFixed(1)} l/min</span>
+        </button>`;
+      }).join('');
+  quick.querySelectorAll('button').forEach(btn=>{
+    btn.onclick = ()=> btn.dataset.act==='start' ? startZoneManual(btn.dataset.zid) : stopZoneManual(btn.dataset.zid);
+  });
+
+  let totalFlow=0; activeZones.forEach(zid=> totalFlow+=zoneTotalFlow(zid));
+  document.getElementById('homeFlowPill').textContent = 'Portata attiva: '+totalFlow.toFixed(1)+' l/min';
+
+  document.getElementById('homeStatPump').textContent = pumpOn ? 'accesa' : 'spenta';
+  document.getElementById('homeStatZones').textContent = activeZones.size;
+  document.getElementById('homeStatSprinklers').textContent = state.sprinklers.length;
+  document.getElementById('homeStatDriplines').textContent = state.driplines.length;
+  document.getElementById('homeStatAuto').textContent = state.auto.enabled ? 'attivo' : 'disattivo';
+
+  const hasContent = state.areas.length || state.sprinklers.length || state.driplines.length || state.decor.length;
+  document.getElementById('homeEmptyHint').style.display = hasContent ? 'none' : 'flex';
+
+  refreshHomeWeather();
+}
+
+async function stopEverything(){
+  for(const zid of [...activeZones]) await setZone(zid,false);
+  await setPump(false);
+  stopTimerProgram();
+  renderManualControl();
+  renderHomeDashboard();
+  toast('Tutte le zone e la pompa sono state fermate','ok');
+}
+document.getElementById('btnEmergencyStop').onclick = stopEverything;
+document.getElementById('btnHomeStop').onclick = stopEverything;
+
+function switchScreen(target){
+  const home = document.getElementById('screen-home');
+  const manage = document.getElementById('screen-manage');
+  if(target==='home'){
+    home.classList.add('active'); manage.classList.remove('active');
+    attach3D(document.getElementById('homeCanvas3dWrap'));
+    renderHomeDashboard();
+  } else {
+    manage.classList.add('active'); home.classList.remove('active');
+    if(mode3D) attach3D(document.getElementById('canvas3dWrap'));
+  }
+}
+document.getElementById('btnHomeSettings').onclick = ()=> switchScreen('manage');
+document.getElementById('btnBackHome').onclick = ()=> switchScreen('home');
+
+/* ============================================================
+   PWA — installazione e service worker
+   ============================================================ */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{ /* es. aperto da file:// */ });
+  });
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+async function init(){
+  await loadState();
+  document.getElementById('versionBadgeHome').textContent = 'v'+APP_VERSION;
+  document.getElementById('versionBadgeManage').textContent = 'v'+APP_VERSION;
+  document.getElementById('versionBadgeSettings').textContent = 'IrrigaHA v'+APP_VERSION;
+  document.getElementById('haUrl').value = state.ha.baseUrl||'';
+  document.getElementById('haToken').value = state.ha.token||'';
+  document.getElementById('pumpMaxFlow').value = state.pump.maxFlowLmin;
+  document.getElementById('pumpMaxPressure').value = state.pump.maxPressureBar;
+  updateScaleHint();
+  renderAutoDays();
+  bindAutoFields();
+  renderZones();
+  renderLegend();
+  resizeCanvasToDisplay();
+  if(state.ha.baseUrl && state.ha.token){ await haTestAndLoad(); }
+  drawMap();
+  switchScreen('home');
+  setInterval(refreshHomeWeather, 5*60*1000);
+}
+init();
+</script>
+</body>
+</html>
