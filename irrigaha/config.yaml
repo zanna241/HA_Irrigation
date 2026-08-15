@@ -1,7 +1,7 @@
 # Manifest dell'add-on per Home Assistant OS / Supervised.
 # Documentazione campi: https://developers.home-assistant.io/docs/add-ons/configuration
 name: "IrrigaHA — Irrigazione"
-version: "1.1.0"
+version: "1.2.0"
 slug: "irrigaha"
 description: "Editor a mappa e regia dell'irrigazione (zone, pompa, timer, meteo) collegata a Home Assistant"
 arch:

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0
+- **Fix**: la mappa 2D nella schermata di Gestione restava invisibile (larghezza 0) perché si
+  ridimensionava solo all'avvio, mentre quello schermo era ancora nascosto dietro la Home.
+  Ora si ridimensiona correttamente ogni volta che entri in Gestione o torni alla vista 2D.
+- **Fix**: il database irrigatori non mostrava i link alle schede tecniche pur essendo presenti
+  nei dati — corretta la tabella.
+- Aggiunta una tabella dedicata al **database tubo gocciolante**, con possibilità di aggiungere
+  prodotti manualmente (marca, modello, spaziatura, portata gocciolatore/metro, link scheda).
+- Il modulo "Aggiungi modello" per gli irrigatori ora include anche il link alla scheda tecnica.
+- Chiarita nell'interfaccia la separazione tra **aree** (prato/ghiaia/terra/aiuola — solo
+  rappresentazione grafica) e **zone** (impianto di irrigazione vero e proprio: gruppo di
+  irrigatori/tubi comandati da un relè). Ogni zona ora mostra automaticamente sopra quale area
+  disegnata ricadono i suoi dispositivi, a titolo puramente informativo.
+
 ## 1.1.0
 - Aggiunta la Home dashboard con anteprima 3D, meteo, stato zone e stop rapido.
 - Aggiunto il tubo gocciolante (polilinea, database dedicato, calcolo portata per lunghezza).

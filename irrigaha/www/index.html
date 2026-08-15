@@ -367,6 +367,7 @@ a{color:var(--water);}
           <h3>Zone irrigazione <span class="badge-count" id="zoneCount">0</span></h3>
           <button class="primary sm" id="btnAddZone">+ Nuova zona</button>
         </div>
+        <p class="help">Le zone sono l'impianto di irrigazione vero e proprio: un gruppo di irrigatori e/o tubi gocciolanti comandati insieme da un relè. Sono indipendenti dalle <b>aree</b> disegnate in Mappa (prato/ghiaia/terra/aiuola), che restano puramente grafiche — la riga "📍" qui sotto mostra solo, a titolo informativo, sopra quale area disegnata ricadono spazialmente i dispositivi di ogni zona.</p>
         <div id="zoneList"></div>
       </div>
     </div>
@@ -467,12 +468,12 @@ a{color:var(--water);}
 
   <!-- ===================== DATABASE ===================== -->
   <div class="view" id="view-db">
-    <div class="card">
+    <div class="card" style="margin-bottom:16px;">
       <div class="section-title">
-        <h3>Database modelli irrigatori</h3>
-        <button class="primary sm" id="btnAddModel">+ Aggiungi modello</button>
+        <h3>Database irrigatori (rotori / statici / a goccia puntuale)</h3>
+        <button class="primary sm" id="btnAddModel">+ Aggiungi modello manualmente</button>
       </div>
-      <p class="help">Valori di portata/gittata basati sulle schede tecniche ufficiali dove disponibili (Rain Bird, Hunter, Gardena); gli altri sono indicativi e vanno verificati sulla scheda del tuo modello — puoi modificarli o aggiungerne di nuovi. La colonna "Scheda" collega alla pagina prodotto ufficiale, per avere sempre la documentazione a portata di mano. La portata è espressa "equivalente a 360°": per irrigatori statici/settoriali (spray) viene poi moltiplicata per l'arco impostato; per i rotori (getto singolo rotante) resta costante indipendentemente dall'arco, come nella realtà fisica di questi apparecchi.</p>
+      <p class="help">Valori di portata/gittata basati sulle schede tecniche ufficiali dove disponibili (Rain Bird, Hunter, Gardena); gli altri sono indicativi e vanno verificati sulla scheda del tuo modello — puoi modificarli o aggiungerne di nuovi con lo stesso modulo, incluso il link alla scheda tecnica. La portata è espressa "equivalente a 360°": per irrigatori statici/settoriali (spray) viene poi moltiplicata per l'arco impostato; per i rotori (getto singolo rotante) resta costante indipendentemente dall'arco, come nella realtà fisica di questi apparecchi.</p>
       <div style="overflow:auto;">
         <table id="modelTable">
           <thead><tr>
@@ -480,6 +481,23 @@ a{color:var(--water);}
             <th>Pressione nom. (bar)</th><th>Portata nom.</th><th>Gittata nom. (m)</th><th>Scheda</th><th></th>
           </tr></thead>
           <tbody id="modelTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h3>Database tubo gocciolante</h3>
+        <button class="primary sm" id="btnAddDriplineModel">+ Aggiungi tubo manualmente</button>
+      </div>
+      <p class="help">Portata per metro (l/h·m) usata per calcolare la portata totale di un tubo gocciolante in base alla sua lunghezza reale disegnata sulla mappa.</p>
+      <div style="overflow:auto;">
+        <table id="driplineModelTable">
+          <thead><tr>
+            <th>Marca</th><th>Modello</th><th>Variante</th>
+            <th>Spaziatura (cm)</th><th>Portata gocciolatore (l/h)</th><th>Portata (l/h·m)</th><th>Scheda</th><th></th>
+          </tr></thead>
+          <tbody id="driplineModelTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -549,7 +567,7 @@ a{color:var(--water);}
    chiaro quale build è effettivamente in esecuzione (utile per
    verificare che un aggiornamento dell'add-on sia andato a buon fine).
    ============================================================ */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 const uid = () => Math.random().toString(36).slice(2,10);
 
@@ -814,7 +832,7 @@ document.getElementById('tabs').addEventListener('click', e=>{
   document.getElementById('view-'+btn.dataset.view).classList.add('active');
   if(btn.dataset.view==='controllo') renderManualControl();
   if(btn.dataset.view==='timer') renderTimer();
-  if(btn.dataset.view==='db') renderModelTable();
+  if(btn.dataset.view==='db'){ renderModelTable(); renderDriplineModelTable(); }
   if(btn.dataset.view==='mappa') drawMap();
 });
 
@@ -1089,6 +1107,21 @@ function zoneTotalFlow(zoneId){
   const driplineFlow = state.driplines.filter(d=>d.zoneId===zoneId)
     .reduce((sum,d)=>sum+computeDriplineFlowLmin(d),0);
   return sprinklerFlow + driplineFlow;
+}
+/* Le aree (prato/ghiaia/terra/aiuola) sono puramente grafiche: non hanno una zona assegnata.
+   Questa funzione è solo informativa — mostra in quali aree disegnate ricadono spazialmente
+   gli irrigatori/tubi di una zona, calcolato in base alla posizione sulla mappa. */
+function zoneContainingAreas(zoneId){
+  const names = new Set();
+  state.sprinklers.filter(s=>s.zoneId===zoneId).forEach(s=>{
+    state.areas.forEach(a=>{ if(pointInPolygon([s.x,s.y], a.points)) names.add(a.name); });
+  });
+  state.driplines.filter(d=>d.zoneId===zoneId).forEach(dl=>{
+    dl.points.forEach(p=>{
+      state.areas.forEach(a=>{ if(pointInPolygon(p, a.points)) names.add(a.name); });
+    });
+  });
+  return [...names];
 }
 
 /* ---------- drawing ---------- */
@@ -1471,6 +1504,7 @@ function renderInspector(){
         </select>
       </div>
       <div class="field"><label>Colore (opzionale, sovrascrive il colore tipo)</label><input type="text" id="aColor" value="${a.color||''}" placeholder="es. #6ec178"></div>
+      <p class="help">Le aree sono solo rappresentazione grafica del terreno: non comandano nulla. Per irrigare, aggiungi irrigatori o tubi gocciolanti sopra quest'area (con lo strumento apposito) e assegnali a una zona nella scheda "Zone &amp; Pompa".</p>
       <div class="row"><button class="danger sm" id="aDelete">🗑 Elimina area</button></div>
     `;
     document.getElementById('aName').oninput = e=>{ a.name=e.target.value; drawMap(); queueSave(); };
@@ -1586,11 +1620,14 @@ function renderZones(){
     const pct = Math.min(100, (flow / (state.pump.maxFlowLmin||1))*100);
     const over = flow > (state.pump.maxFlowLmin||9999);
     const count = state.sprinklers.filter(s=>s.zoneId===z.id).length;
+    const dripCount = state.driplines.filter(d=>d.zoneId===z.id).length;
+    const inAreas = zoneContainingAreas(z.id);
     return `<div class="card" style="margin-bottom:10px;border-color:${z.color}33;">
       <div class="row">
         <span class="swatch" style="background:${z.color};width:14px;height:14px;border-radius:4px;"></span>
         <input type="text" data-zid="${z.id}" class="zName" value="${escapeHtml(z.name)}" style="max-width:220px;">
         <span class="pill">${count} irrigatori</span>
+        ${dripCount?`<span class="pill">${dripCount} tubi gocciolanti</span>`:''}
         ${over?'<span class="pill danger">⚠ portata &gt; pompa</span>':''}
         <span class="spacer"></span>
         <button class="danger sm" data-zid="${z.id}" data-act="del">🗑</button>
@@ -1609,6 +1646,7 @@ function renderZones(){
       </div>
       <div class="small muted">Portata stimata zona: ${flow.toFixed(1)} l/min di ${state.pump.maxFlowLmin} l/min pompa</div>
       <div class="flow-bar"><div style="width:${pct}%;background:${over?'linear-gradient(90deg,#e0a83a,#e0645a)':''}"></div></div>
+      <div class="small muted" style="margin-top:6px;">📍 ${inAreas.length ? 'Si trova su: '+escapeHtml(inAreas.join(', ')) : "Nessun irrigatore/tubo di questa zona è posizionato sopra un'area disegnata"}</div>
     </div>`;
   }).join('');
   wrap.querySelectorAll('.zName').forEach(inp=> inp.oninput = e=>{ zoneById(e.target.dataset.zid).name=e.target.value; renderLegend(); drawMap(); queueSave(); });
@@ -1900,6 +1938,9 @@ function renderModelTable(){
   allModels().forEach(m=>{
     m.nozzles.forEach((n,idx)=>{
       const isCustom = state.customModels.some(c=>c.id===m.id);
+      const schedaCell = idx===0
+        ? (m.datasheetUrl ? `<a href="${m.datasheetUrl}" target="_blank" rel="noopener">↗ scheda</a>` : `<span class="small muted">${escapeHtml(m.source||'—')}</span>`)
+        : '';
       rows.push(`<tr>
         <td>${idx===0?escapeHtml(m.brand):''}</td>
         <td>${idx===0?escapeHtml(m.model):''}</td>
@@ -1908,7 +1949,7 @@ function renderModelTable(){
         <td>${n.pressureBar}</td>
         <td>${n.flow360}</td>
         <td>${n.radiusM}</td>
-        <td class="small muted">${idx===0?escapeHtml(m.source||''):''}</td>
+        <td class="small">${schedaCell}</td>
         <td>${idx===0 && isCustom ? `<button class="danger sm" data-mid="${m.id}" data-act="delmodel">🗑</button>`:''}</td>
       </tr>`);
     });
@@ -1927,11 +1968,56 @@ document.getElementById('btnAddModel').onclick = ()=>{
   const pressureBar = parseFloat(prompt('Pressione nominale (bar):','3'))||3;
   const flow360 = parseFloat(prompt('Portata nominale equivalente 360° (l/min):','10'))||10;
   const radiusM = parseFloat(prompt('Gittata nominale (m):','9'))||9;
-  const m = {id:uid(), brand, model, type, scaleWithArc: type==='spray', source:'Personalizzato',
+  const datasheetUrl = prompt('Link alla scheda tecnica (opzionale, lascia vuoto se non disponibile):','') || '';
+  const m = {id:uid(), brand, model, type, scaleWithArc: type==='spray', source:'Personalizzato', datasheetUrl,
     nozzles:[{id:'Standard', pressureBar, flow360, radiusM}]};
   state.customModels.push(m);
   renderModelTable(); queueSave();
   toast('Modello aggiunto al database','ok');
+};
+
+function renderDriplineModelTable(){
+  const body = document.getElementById('driplineModelTableBody');
+  const rows = [];
+  allDriplineModels().forEach(m=>{
+    m.variants.forEach((v,idx)=>{
+      const isCustom = state.customModels.some(c=>c.id===m.id);
+      const schedaCell = idx===0
+        ? (m.datasheetUrl ? `<a href="${m.datasheetUrl}" target="_blank" rel="noopener">↗ scheda</a>` : `<span class="small muted">${escapeHtml(m.source||'—')}</span>`)
+        : '';
+      rows.push(`<tr>
+        <td>${idx===0?escapeHtml(m.brand):''}</td>
+        <td>${idx===0?escapeHtml(m.model):''}</td>
+        <td>${escapeHtml(v.id)}</td>
+        <td>${v.spacingCm}</td>
+        <td>${v.flowPerDripperLh}</td>
+        <td>${v.flowPerMeterLh}</td>
+        <td class="small">${schedaCell}</td>
+        <td>${idx===0 && isCustom ? `<button class="danger sm" data-mid="${m.id}" data-act="deldripmodel">🗑</button>`:''}</td>
+      </tr>`);
+    });
+  });
+  body.innerHTML = rows.join('');
+  body.querySelectorAll('[data-act=deldripmodel]').forEach(btn=> btn.onclick = ()=>{
+    if(!confirm('Eliminare questo prodotto personalizzato?')) return;
+    state.customModels = state.customModels.filter(m=>m.id!==btn.dataset.mid);
+    renderDriplineModelTable(); queueSave();
+  });
+}
+document.getElementById('btnAddDriplineModel').onclick = ()=>{
+  const brand = prompt('Marca:'); if(!brand) return;
+  const model = prompt('Modello / linea prodotto:'); if(!model) return;
+  const spacingCm = parseFloat(prompt('Spaziatura tra i gocciolatori (cm):','30'))||30;
+  const flowPerDripperLh = parseFloat(prompt('Portata per singolo gocciolatore (l/h):','2'))||2;
+  const suggestedPerMeter = spacingCm>0 ? Math.round((100/spacingCm)*flowPerDripperLh*100)/100 : 0;
+  const flowPerMeterLh = parseFloat(prompt('Portata per metro di tubo (l/h·m) — calcolata da spaziatura e portata gocciolatore, modificabile:', suggestedPerMeter)) || suggestedPerMeter;
+  const datasheetUrl = prompt('Link alla scheda tecnica (opzionale, lascia vuoto se non disponibile):','') || '';
+  const variantLabel = `${flowPerDripperLh} l/h @ ${spacingCm} cm`;
+  const m = {id:uid(), brand, model, type:'dripline', source:'Personalizzato', datasheetUrl,
+    variants:[{id:variantLabel, spacingCm, flowPerDripperLh, flowPerMeterLh}]};
+  state.customModels.push(m);
+  renderDriplineModelTable(); queueSave();
+  toast('Tubo gocciolante aggiunto al database','ok');
 };
 
 /* ============================================================
@@ -2257,7 +2343,7 @@ document.getElementById('view2DBtn').onclick = ()=>{
   document.getElementById('canvas3dWrap').style.display='none';
   document.getElementById('help3d').style.display='none';
   document.getElementById('toolHelp').style.display='block';
-  drawMap();
+  resizeCanvasToDisplay();
 };
 
 /* ============================================================
@@ -2334,7 +2420,8 @@ function switchScreen(target){
     renderHomeDashboard();
   } else {
     manage.classList.add('active'); home.classList.remove('active');
-    if(mode3D) attach3D(document.getElementById('canvas3dWrap'));
+    if(mode3D){ attach3D(document.getElementById('canvas3dWrap')); }
+    else { resizeCanvasToDisplay(); } // fix: canvas 2D nascosto all'avvio finiva a larghezza 0
   }
 }
 document.getElementById('btnHomeSettings').onclick = ()=> switchScreen('manage');
