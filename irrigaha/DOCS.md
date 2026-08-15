@@ -6,6 +6,11 @@ entità di Home Assistant (relè smart per valvole/pompa, centraline Tuya-compat
 integrate in HA). Gira interamente in locale: nessuna pagina esterna, nessuna dipendenza da
 internet a runtime (Three.js per l'anteprima 3D è incluso nell'add-on, non caricato da CDN).
 
+Prima del disegno si impostano larghezza e profondità reali dell'appezzamento. La mappa mostra
+righelli metrici e la lunghezza dinamica del segmento sotto il cursore. Il ritardo di sicurezza
+valvola/pompa garantisce la sequenza zona → attesa → pompa all'avvio e pompa → attesa → zona
+all'arresto, in ogni modalità di comando.
+
 ## Cosa include
 
 - **Home**: dashboard con anteprima 3D animata del giardino, meteo, stato zone, pulsante di

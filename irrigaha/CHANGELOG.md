@@ -29,3 +29,11 @@
 ## 1.0.0
 - Prima versione: mappa 2D/3D, zone e pompa, controllo manuale, timer, automazione meteo,
   database irrigatori base, connessione a Home Assistant via API REST.
+# 1.3.0
+
+- Dimensionamento iniziale obbligatorio dell'appezzamento con righelli metrici.
+- Misura dinamica sulla linea elastica e rimozione dei punti duplicati da doppio clic.
+- Rimossa la texture verticale del prato e migliorata la vegetazione con simboli vettoriali.
+- Database ripulito: mantenuti solo link ufficiali verificati.
+- Sequenza sicura: valvola, ritardo, pompa in avvio; pompa, ritardo, valvola in arresto.
+- Ritardo configurabile applicato a Home, manuale, timer, emergenza e YAML Home Assistant.

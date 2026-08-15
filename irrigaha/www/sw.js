@@ -1,7 +1,7 @@
 // Bump ad ogni release insieme a APP_VERSION in index.html: forza la pulizia
 // della cache precedente e garantisce che l'aggiornamento venga effettivamente
 // scaricato invece di restare bloccati su una versione vecchia in cache.
-const CACHE_NAME = 'irrigaha-v3';
+const CACHE_NAME = 'irrigaha-v4';
 const APP_SHELL = [
   './manifest.json',
   './icons/icon-192.png',

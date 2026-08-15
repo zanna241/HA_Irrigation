@@ -191,6 +191,8 @@ a{color:var(--water);}
 /* ---------- Dripline / vegetation toolbar accents ---------- */
 .map-toolbar button[data-tool="dripline"].active{border-color:var(--warn);color:var(--warn);background:var(--warn-soft);}
 .map-toolbar button[data-tool="vegetazione"].active{border-color:#8fe0a0;color:#8fe0a0;background:#8fe0a022;}
+.plot-setup{display:grid;grid-template-columns:repeat(3,minmax(130px,1fr)) auto;gap:10px;align-items:end;margin-bottom:10px;padding:12px;background:var(--bg2);border:1px solid var(--border-soft);border-radius:10px;}.plot-setup .field{margin:0}.plot-setup button{height:38px}.plot-size-note{grid-column:1/-1;font-size:11.5px;color:var(--text-dim)}
+@media(max-width:720px){.plot-setup{grid-template-columns:1fr 1fr}.plot-setup button{grid-column:1/-1}}
 </style>
 </head>
 <body>
@@ -289,6 +291,13 @@ a{color:var(--water);}
         </div>
 
         <div id="canvas2dArea">
+          <div class="plot-setup" id="plotSetup">
+            <div class="field"><label>Larghezza appezzamento (m)</label><input type="number" id="plotWidthM" min="1" max="10000" step="0.5" value="50"></div>
+            <div class="field"><label>Profondità appezzamento (m)</label><input type="number" id="plotHeightM" min="1" max="10000" step="0.5" value="31"></div>
+            <div class="field"><label>Passo righelli (m)</label><input type="number" id="rulerStepM" min="0.5" max="1000" step="0.5" value="5"></div>
+            <button class="primary" id="btnApplyPlotSize">Applica dimensioni</button>
+            <div class="plot-size-note">Le dimensioni reali definiscono scala e proporzioni della tavola. Impostale prima di disegnare; i riferimenti metrici restano visibili a sinistra e in basso.</div>
+          </div>
           <div class="map-toolbar">
             <button data-tool="select" class="active">↖ Seleziona / sposta</button>
             <button data-tool="area">▱ Disegna area</button>
@@ -296,7 +305,6 @@ a{color:var(--water);}
             <button data-tool="dripline">〰️ Tubo gocciolante</button>
             <button data-tool="vegetazione">🌳 Albero/siepe/pianta</button>
             <button data-tool="sensor">📡 Sensore</button>
-            <button data-tool="calibrate">📏 Calibra scala</button>
             <span class="spacer"></span>
             <button id="btnClearMap" class="danger sm">Svuota mappa</button>
           </div>
@@ -356,10 +364,11 @@ a{color:var(--water);}
             <input type="number" id="pumpMaxPressure" value="4" step="0.1" min="0.5">
           </div>
         </div>
-        <div class="field">
-          <label>Sensore portata reale (opzionale, l/min)</label>
-          <select id="pumpFlowSensor"></select>
-        </div>
+          <div class="field">
+            <label>Sensore portata reale (opzionale, l/min)</label>
+            <select id="pumpFlowSensor"></select>
+          </div>
+          <div class="field" style="max-width:360px;"><label>Ritardo sicurezza valvola ↔ pompa (secondi)</label><input type="number" id="pumpValveDelay" value="2" min="0" max="120" step="0.5"><div class="help">Avvio: zona, attesa, pompa. Arresto: pompa, attesa, zona.</div></div>
       </div>
 
       <div class="card">
@@ -567,19 +576,20 @@ a{color:var(--water);}
    chiaro quale build è effettivamente in esecuzione (utile per
    verificare che un aggiornamento dell'add-on sia andato a buon fine).
    ============================================================ */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 const uid = () => Math.random().toString(36).slice(2,10);
 
 const DEFAULT_STATE = {
   metersPerPixel: 0.05, // scale calibration
+  plot: {widthM:50, heightM:31, rulerStepM:5, configured:false},
   areas: [],       // {id,name,type('prato'|'ghiaia'|'terra'|'aiuola'),color,points:[[x,y]...]}
   sprinklers: [],  // {id,x,y,brand,model,nozzle,type,scaleWithArc,customFlow360,customRadius,radiusM,angleStart,angleEnd,rotation,zoneId,name,numEmitters,flowPerEmitterLh}
   driplines: [],   // {id,name,points:[[x,y]...],modelId,variantId,zoneId}
   decor: [],       // {id,x,y,kind('albero'|'siepe'|'cespuglio'|'pianta'),size,name}
   sensors: [],     // {id,x,y,kind,name,entityId}
   zones: [],       // {id,name,color,relayEntity,pressureBar}
-  pump: {relayEntity:'', maxFlowLmin:60, maxPressureBar:4, flowSensorEntity:''},
+  pump: {relayEntity:'', maxFlowLmin:60, maxPressureBar:4, flowSensorEntity:'', valvePumpDelaySec:2},
   timers: {},      // zoneId -> minutes
   auto: {enabled:false, weatherEntity:'', rainSensor:'', rainThreshold:60, startTime:'06:00',
          days:{lun:true,mar:true,mer:true,gio:true,ven:true,sab:true,dom:true},
@@ -597,7 +607,7 @@ const ZONE_COLORS = ['#6ec178','#3fa6cf','#e0a83a','#c98fe0','#e0645a','#5ad1c0'
 /* ---------- Preset sprinkler DB (seeded from schede tecniche ufficiali dove indicato) ---------- */
 const PRESET_MODELS = [
   {id:'rb5000', brand:'Rain Bird', model:'5000 Series (Rain Curtain)', type:'rotor', scaleWithArc:false,
-    source:'Scheda tecnica Rain Bird', datasheetUrl:'https://www.rainbird.com/products/5000-series-rotors',
+    source:'Pagina prodotto ufficiale Rain Bird', datasheetUrl:'https://www.rainbird.com/products/5000-series',
     nozzles:[
       {id:'1.5', pressureBar:3.1, flow360:5.98, radiusM:9.4},
       {id:'2.0', pressureBar:3.1, flow360:7.65, radiusM:9.75},
@@ -608,7 +618,7 @@ const PRESET_MODELS = [
       {id:'8.0', pressureBar:3.4, flow360:33.5, radiusM:15.2},
     ]},
   {id:'rb1800', brand:'Rain Bird', model:'1800 Series (statico/spray)', type:'spray', scaleWithArc:true,
-    source:'Scheda tecnica Rain Bird', datasheetUrl:'https://www.rainbird.com/products/1800-series-spray-sprinkler-bodies',
+    source:'Pagina prodotto ufficiale Rain Bird', datasheetUrl:'https://www.rainbird.com/products/1800-series-spray-sprinkler-bodies',
     nozzles:[
       {id:'8 ft', pressureBar:2.1, flow360:15.2, radiusM:2.4},
       {id:'10 ft', pressureBar:2.1, flow360:22.8, radiusM:3.0},
@@ -616,7 +626,7 @@ const PRESET_MODELS = [
       {id:'15 ft', pressureBar:2.1, flow360:38.0, radiusM:4.6},
     ]},
   {id:'rb3500', brand:'Rain Bird', model:'3500 Series', type:'rotor', scaleWithArc:false,
-    source:'Indicativo — verifica scheda ugello', datasheetUrl:'https://www.rainbird.com/products/3500-series-rotors',
+    source:'Pagina prodotto ufficiale Rain Bird', datasheetUrl:'https://www.rainbird.com/products/3500-series-rotor-sprinklers',
     nozzles:[
       {id:'1.5', pressureBar:2.8, flow360:5.2, radiusM:7.9},
       {id:'3.0', pressureBar:2.8, flow360:10.4, radiusM:9.1},
@@ -631,38 +641,38 @@ const PRESET_MODELS = [
       {id:'3.0 Blu', pressureBar:3.1, flow360:11.4, radiusM:11.6},
     ]},
   {id:'hpros', brand:'Hunter', model:'PROS-00 (statico/spray)', type:'spray', scaleWithArc:true,
-    source:'Indicativo — verifica scheda ugello', datasheetUrl:'https://www.hunterirrigation.com/irrigation-product/spray-heads/pros-00',
+    source:'Pagina prodotto ufficiale Hunter', datasheetUrl:'https://www.hunterirrigation.com/irrigation-product/pro-sprayr/pros-00',
     nozzles:[
       {id:'8 ft', pressureBar:2.1, flow360:14.5, radiusM:2.4},
       {id:'10 ft', pressureBar:2.1, flow360:21.6, radiusM:3.0},
       {id:'12 ft', pressureBar:2.1, flow360:29.2, radiusM:3.7},
     ]},
   {id:'hmp', brand:'Hunter', model:'MP Rotator (rotante a getti multipli)', type:'rotor', scaleWithArc:false,
-    source:'Indicativo — verifica scheda ugello', datasheetUrl:'https://www.hunterirrigation.com/irrigation-product/nozzles/mp-rotator',
+    source:'Pagina prodotto ufficiale Hunter', datasheetUrl:'https://www.hunterirrigation.com/irrigation-product/mp-rotator/standard-mp-rotatorr-nozzle',
     nozzles:[
       {id:'MP1000 (90-210°)', pressureBar:2.8, flow360:4.2, radiusM:5.5},
       {id:'MP2000 (90-210°)', pressureBar:2.8, flow360:5.8, radiusM:7.3},
       {id:'MP3000 (90-210°)', pressureBar:2.8, flow360:7.6, radiusM:9.1},
     ]},
   {id:'gardena', brand:'Gardena', model:'Pop-up Sprinklersystem (generico)', type:'spray', scaleWithArc:true,
-    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.gardena.com/it/prodotti/irrigazione/',
+    source:'Valori indicativi — nessuna scheda univoca verificata', datasheetUrl:'',
     nozzles:[
       {id:'Standard', pressureBar:3.0, flow360:14, radiusM:3.5},
       {id:'Extra', pressureBar:3.0, flow360:20, radiusM:4.5},
     ]},
   {id:'toro570', brand:'Toro', model:'570Z (statico/spray)', type:'spray', scaleWithArc:true,
-    source:'Indicativo — verifica scheda ugello', datasheetUrl:'https://www.toro.com/en/professional-contractor/irrigation/spray-heads/570z-pro-series-spray-heads',
+    source:'Pagina prodotto ufficiale Toro', datasheetUrl:'https://www.toro.com/en/product/570Z-Series',
     nozzles:[
       {id:'8 ft', pressureBar:2.1, flow360:14.0, radiusM:2.4},
       {id:'12 ft', pressureBar:2.1, flow360:28.0, radiusM:3.7},
     ]},
   {id:'krain', brand:'K-Rain', model:'RPS75 (rotore)', type:'rotor', scaleWithArc:false,
-    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.krain.com/rotors/rps75',
+    source:'Valori indicativi — nessuna scheda verificata', datasheetUrl:'',
     nozzles:[
       {id:'Standard', pressureBar:2.8, flow360:9.5, radiusM:9.4},
     ]},
   {id:'irritrol', brand:'Irritrol', model:'Rotore (generico)', type:'rotor', scaleWithArc:false,
-    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.irritrol.com/products/rotors',
+    source:'Valori indicativi — nessuna scheda verificata', datasheetUrl:'',
     nozzles:[
       {id:'Standard', pressureBar:3.0, flow360:10, radiusM:9},
     ]},
@@ -678,28 +688,28 @@ const PRESET_MODELS = [
 /* ---------- Preset dripline DB (tubo forato gocciolante) ---------- */
 const PRESET_DRIPLINES = [
   {id:'rb-xfd-09-12', brand:'Rain Bird', model:'XF Dripline XFD-09-12 (16 mm)',
-    source:'Scheda tecnica Rain Bird', datasheetUrl:'https://www.rainbird.com/professionals/specifier/dripline',
+    source:'Valori da catalogo — collegamento specifico non verificato', datasheetUrl:'',
     variants:[
       {id:'0.92 GPH @ 30 cm', spacingCm:30, flowPerDripperLh:3.48, flowPerMeterLh:11.6},
     ]},
   {id:'rb-xfd-06-18', brand:'Rain Bird', model:'XF Dripline XFD-06-18 (16 mm)',
-    source:'Scheda tecnica Rain Bird', datasheetUrl:'https://www.rainbird.com/professionals/specifier/dripline',
+    source:'Valori da catalogo — collegamento specifico non verificato', datasheetUrl:'',
     variants:[
       {id:'0.6 GPH @ 45 cm', spacingCm:45, flowPerDripperLh:2.27, flowPerMeterLh:5.0},
     ]},
   {id:'gardena-drip16', brand:'Gardena', model:'Micro-Drip-System — tubo gocciolante interrato 1,6 l/h',
-    source:'Scheda tecnica Gardena', datasheetUrl:'https://www.gardena.com/it/prodotti/irrigazione/micro-irrigazione/tubo-gocciolante-interrato-e-di-superficie-16-lh-25-m/970653801.html',
+    source:'Valori da catalogo — collegamento specifico non verificato', datasheetUrl:'',
     variants:[
       {id:'1,6 l/h @ 30 cm', spacingCm:30, flowPerDripperLh:1.6, flowPerMeterLh:5.3},
     ]},
   {id:'netafim-generic', brand:'Netafim', model:'Techline (generico, autocompensante)',
-    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.netafim.com/en/drip-irrigation/dripperlines/techline/',
+    source:'Catalogo ufficiale Netafim (modello generico)', datasheetUrl:'https://www.netafim.com/en/products-and-solutions/product-offering/drip-irrigation-products/',
     variants:[
       {id:'1,6 l/h @ 33 cm', spacingCm:33, flowPerDripperLh:1.6, flowPerMeterLh:4.85},
       {id:'2,3 l/h @ 33 cm', spacingCm:33, flowPerDripperLh:2.3, flowPerMeterLh:6.97},
     ]},
   {id:'claber-generic', brand:'Claber', model:'Tubo gocciolante (generico)',
-    source:'Indicativo — verifica scheda modello', datasheetUrl:'https://www.claber.com/it/prodotti/irrigazione-a-goccia',
+    source:'Valori indicativi — nessuna scheda verificata', datasheetUrl:'',
     variants:[
       {id:'2 l/h @ 30 cm', spacingCm:30, flowPerDripperLh:2, flowPerMeterLh:6.7},
     ]},
@@ -726,6 +736,8 @@ async function loadState(){
       state = Object.assign(structuredClone(DEFAULT_STATE), parsed.state);
       // deep-merge nested defaults in case of older saved shape
       state.pump = Object.assign(structuredClone(DEFAULT_STATE.pump), parsed.state.pump||{});
+      state.plot = Object.assign(structuredClone(DEFAULT_STATE.plot), parsed.state.plot||{});
+      if(!parsed.state.plot && (state.areas.length||state.sprinklers.length||state.driplines.length||state.decor.length||state.sensors.length)) state.plot.configured=true;
       state.auto = Object.assign(structuredClone(DEFAULT_STATE.auto), parsed.state.auto||{});
       state.ha = Object.assign(structuredClone(DEFAULT_STATE.ha), parsed.state.ha||{});
     }
@@ -847,18 +859,21 @@ let drawingArea = null; // {points:[[x,y]]}
 let drawingLine = null; // {points:[[x,y]]} for dripline
 let calibratePts = [];
 let selected = null; // {kind,id}
+const RULER_LEFT=42, RULER_BOTTOM=30;
 
 function resizeCanvasToDisplay(){
   const wrap = canvas.parentElement;
   const w = wrap.clientWidth;
   canvas.width = w;
-  canvas.height = Math.round(w*0.62);
+  const ratio=(state.plot&&state.plot.widthM>0)?state.plot.heightM/state.plot.widthM:0.62;
+  canvas.height = Math.round((w-RULER_LEFT)*ratio+RULER_BOTTOM);
   drawMap();
 }
 window.addEventListener('resize', resizeCanvasToDisplay);
 
 document.querySelectorAll('.map-toolbar [data-tool]').forEach(b=>{
   b.addEventListener('click', ()=>{
+    if(b.dataset.tool!=='select' && !state.plot.configured){ toast('Prima imposta le dimensioni reali dell’appezzamento e premi “Applica dimensioni”.','err'); document.getElementById('plotWidthM').focus(); return; }
     document.querySelectorAll('.map-toolbar [data-tool]').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     tool = b.dataset.tool;
@@ -881,8 +896,15 @@ function canvasPos(evt){
   const rect = canvas.getBoundingClientRect();
   const cx = (evt.touches? evt.touches[0].clientX : evt.clientX) - rect.left;
   const cy = (evt.touches? evt.touches[0].clientY : evt.clientY) - rect.top;
-  return [cx*(canvas.width/rect.width), cy*(canvas.height/rect.height)];
+  return [Math.max(RULER_LEFT,Math.min(canvas.width,cx*(canvas.width/rect.width))), Math.max(0,Math.min(canvas.height-RULER_BOTTOM,cy*(canvas.height/rect.height)))];
 }
+function applyPlotSize(){
+  const widthM=parseFloat(document.getElementById('plotWidthM').value), heightM=parseFloat(document.getElementById('plotHeightM').value), rulerStepM=parseFloat(document.getElementById('rulerStepM').value);
+  if(!(widthM>0&&heightM>0&&rulerStepM>0)){ toast('Inserisci dimensioni e passo righello validi','err'); return; }
+  if((state.areas.length||state.sprinklers.length||state.driplines.length||state.decor.length||state.sensors.length)&&state.plot.configured&&!confirm('Cambiare le dimensioni modifica scala e proporzioni del progetto. Continuare?')) return;
+  state.plot={widthM,heightM,rulerStepM,configured:true}; resizeCanvasToDisplay(); updateScaleHint(); queueSave(); toast('Tavola impostata a '+widthM+' × '+heightM+' m','ok');
+}
+document.getElementById('btnApplyPlotSize').onclick=applyPlotSize;
 
 function hitTestSprinkler(x,y){
   for(let i=state.sprinklers.length-1;i>=0;i--){
@@ -1029,14 +1051,18 @@ function onMove(evt){
 function onUp(){ if(dragging){ queueSave(); } dragging=null; }
 function onDblClick(){
   if(tool==='area' && drawingArea && drawingArea.points.length>=3){
-    const a = {id:uid(), name:'Area '+(state.areas.length+1), type:'prato', color: '', points:drawingArea.points};
+    const points=drawingArea.points.filter((p,i,a)=>i===0||Math.hypot(p[0]-a[i-1][0],p[1]-a[i-1][1])>2);
+    if(points.length<3) return;
+    const a = {id:uid(), name:'Area '+(state.areas.length+1), type:'prato', color: '', points};
     state.areas.push(a);
     drawingArea=null;
     selectItem('area', a.id);
     queueSave(); drawMap();
   } else if(tool==='dripline' && drawingLine && drawingLine.points.length>=2){
+    const points=drawingLine.points.filter((p,i,a)=>i===0||Math.hypot(p[0]-a[i-1][0],p[1]-a[i-1][1])>2);
+    if(points.length<2) return;
     const dl = {id:uid(), name:'Tubo gocciolante '+(state.driplines.length+1),
-      points:drawingLine.points, modelId:'gardena-drip16', variantId:'1,6 l/h @ 30 cm',
+      points, modelId:'gardena-drip16', variantId:'1,6 l/h @ 30 cm',
       zoneId: state.zones[0]?state.zones[0].id:''};
     state.driplines.push(dl);
     drawingLine=null;
@@ -1052,7 +1078,8 @@ function selectItem(kind,id){
 }
 
 function updateScaleHint(){
-  document.getElementById('mapHint').textContent = 'Scala: 1 px ≈ '+state.metersPerPixel.toFixed(3)+' m ('+(1/state.metersPerPixel).toFixed(1)+' px/m)';
+  state.metersPerPixel=(state.plot.widthM||50)/Math.max(1,canvas.width-RULER_LEFT);
+  document.getElementById('mapHint').textContent = 'Tavola: '+state.plot.widthM+' × '+state.plot.heightM+' m · 1 px ≈ '+state.metersPerPixel.toFixed(3)+' m';
 }
 
 /* ---------- flow physics helpers ---------- */
@@ -1132,12 +1159,22 @@ const AREA_TYPE_FILL = {
   aiuola:  {base:'#a2c96b', line:'#7a5636'},
 };
 const DECOR_ICON = {albero:'🌳', siepe:'🌿', cespuglio:'🪴', pianta:'🌱'};
+function drawElasticMeasure(a,b,color){
+  const meters=Math.hypot(b[0]-a[0],b[1]-a[1])*state.metersPerPixel, label=meters.toFixed(meters<10?2:1)+' m', mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2;
+  ctx.save();ctx.font='bold 12px Inter';const tw=ctx.measureText(label).width;ctx.fillStyle='#081510e8';ctx.strokeStyle=color;ctx.beginPath();ctx.roundRect(mx-tw/2-7,my-22,tw+14,20,6);ctx.fill();ctx.stroke();ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(label,mx,my-8);ctx.restore();
+}
+function drawMetricRulers(){
+  const w=canvas.width,h=canvas.height,step=state.plot.rulerStepM||5;ctx.save();ctx.fillStyle='#0b1714e8';ctx.fillRect(0,0,RULER_LEFT,h);ctx.fillRect(0,h-RULER_BOTTOM,w,RULER_BOTTOM);ctx.strokeStyle='#668176';ctx.fillStyle='#b7c9c1';ctx.font='10px Inter';
+  for(let m=0;m<=state.plot.widthM+.001;m+=step){const x=RULER_LEFT+(m/state.plot.widthM)*(w-RULER_LEFT);ctx.beginPath();ctx.moveTo(x,h-RULER_BOTTOM);ctx.lineTo(x,h-RULER_BOTTOM+7);ctx.stroke();ctx.textAlign='center';ctx.fillText(m+' m',x,h-7)}
+  for(let m=0;m<=state.plot.heightM+.001;m+=step){const y=(m/state.plot.heightM)*(h-RULER_BOTTOM);ctx.beginPath();ctx.moveTo(RULER_LEFT-7,y);ctx.lineTo(RULER_LEFT,y);ctx.stroke();ctx.save();ctx.translate(12,y);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText(m+' m',0,3);ctx.restore()}ctx.strokeStyle='#8aa299';ctx.strokeRect(RULER_LEFT,0,w-RULER_LEFT,h-RULER_BOTTOM);ctx.restore();
+}
 
 function drawMap(previewArea, previewPt, previewLine){
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  updateScaleHint();
   // grid
   ctx.save();
-  const gridPx = Math.max(14, (1/state.metersPerPixel)); // ~1 meter grid
+  const gridPx = Math.max(10, (state.plot.rulerStepM||5)/state.metersPerPixel);
   ctx.strokeStyle = '#ffffff08';
   ctx.lineWidth=1;
   for(let x=0;x<canvas.width;x+=gridPx){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke(); }
@@ -1167,8 +1204,8 @@ function drawMap(previewArea, previewPt, previewLine){
       ctx.strokeStyle=fillColor+'40'; ctx.lineWidth=1;
       for(let gy=by0; gy<by1; gy+=6){ ctx.beginPath(); ctx.moveTo(bx0,gy); ctx.lineTo(bx1,gy); ctx.stroke(); }
     } else if(a.type==='prato'){
-      ctx.strokeStyle=fillColor+'30'; ctx.lineWidth=1;
-      for(let gx=bx0; gx<bx1; gx+=5){ ctx.beginPath(); ctx.moveTo(gx,by1); ctx.lineTo(gx-2,by0); ctx.stroke(); }
+      ctx.strokeStyle=fillColor+'38'; ctx.lineWidth=1;
+      for(let gx=bx0;gx<bx1;gx+=9) for(let gy=by0;gy<by1;gy+=9){ctx.beginPath();ctx.moveTo(gx-2,gy+2);ctx.quadraticCurveTo(gx,gy-3,gx+2,gy+2);ctx.stroke();}
     } else if(a.type==='aiuola'){
       ctx.fillStyle='#e0a83a30';
       for(let gx=bx0; gx<bx1; gx+=16) for(let gy=by0; gy<by1; gy+=16){
@@ -1192,6 +1229,7 @@ function drawMap(previewArea, previewPt, previewLine){
     if(previewPt) ctx.lineTo(previewPt[0],previewPt[1]);
     ctx.strokeStyle='#cbb27a'; ctx.setLineDash([5,4]); ctx.lineWidth=1.5; ctx.stroke(); ctx.setLineDash([]);
     drawingArea.points.forEach(([x,y])=>{ ctx.beginPath(); ctx.arc(x,y,3,0,7); ctx.fillStyle='#cbb27a'; ctx.fill(); });
+    if(previewPt) drawElasticMeasure(drawingArea.points[drawingArea.points.length-1],previewPt,'#cbb27a');
   }
 
   // driplines (tubo gocciolante) — linea tratteggiata con tacche gocciolatore
@@ -1226,6 +1264,7 @@ function drawMap(previewArea, previewPt, previewLine){
     if(previewLine && previewPt) ctx.lineTo(previewPt[0],previewPt[1]);
     ctx.strokeStyle='#e0a83a'; ctx.setLineDash([2,5]); ctx.lineWidth=2.5; ctx.stroke(); ctx.setLineDash([]);
     drawingLine.points.forEach(([x,y])=>{ ctx.beginPath(); ctx.arc(x,y,3,0,7); ctx.fillStyle='#e0a83a'; ctx.fill(); });
+    if(previewPt) drawElasticMeasure(drawingLine.points[drawingLine.points.length-1],previewPt,'#e0a83a');
   }
 
   // sprinklers (coverage arc + icon)
@@ -1263,12 +1302,11 @@ function drawMap(previewArea, previewPt, previewLine){
   state.decor.forEach(d=>{
     const isSel = selected&&selected.kind==='decor'&&selected.id===d.id;
     const r = 10 + (d.size||1)*4;
-    ctx.beginPath(); ctx.arc(d.x,d.y,r,0,7);
-    ctx.fillStyle = '#1c3327'; ctx.fill();
-    if(isSel){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
-    ctx.font=(r*1.3)+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(DECOR_ICON[d.kind]||'🌳', d.x, d.y);
-    ctx.textBaseline='alphabetic';
+    ctx.save();ctx.translate(d.x,d.y);
+    if(d.kind==='albero'){ctx.fillStyle='#6d4528';ctx.fillRect(-2,r*.1,4,r*.9);[['#225f36',-.35,-.12,.68],['#2f7b42',.32,-.2,.72],['#3f9550',0,-.52,.75]].forEach(c=>{ctx.beginPath();ctx.arc(c[1]*r,c[2]*r,c[3]*r,0,7);ctx.fillStyle=c[0];ctx.fill()});}
+    else if(d.kind==='siepe'){for(let i=-1;i<=1;i++){ctx.beginPath();ctx.arc(i*r*.55,0,r*.62,0,7);ctx.fillStyle=i?'#2d7940':'#3e9650';ctx.fill()}}
+    else{ctx.beginPath();ctx.arc(0,0,r*.72,0,7);ctx.fillStyle=d.kind==='cespuglio'?'#397e42':'#4fae61';ctx.fill();ctx.strokeStyle='#a8dc89';for(let i=0;i<6;i++){ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(i*Math.PI/3)*r*.72,Math.sin(i*Math.PI/3)*r*.72);ctx.stroke()}}
+    if(isSel){ctx.beginPath();ctx.arc(0,0,r*1.1,0,7);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke()}ctx.restore();
   });
 
   // sensors
@@ -1286,6 +1324,7 @@ function drawMap(previewArea, previewPt, previewLine){
     ctx.fillText(se.name, se.x, se.y+20);
   });
 
+  drawMetricRulers();
   // calibration points
   calibratePts.forEach(([x,y])=>{ ctx.beginPath(); ctx.arc(x,y,4,0,7); ctx.fillStyle='#e0a83a'; ctx.fill(); });
   if(calibratePts.length===1){
@@ -1668,6 +1707,7 @@ document.getElementById('pumpEntity').onchange = e=>{ state.pump.relayEntity=e.t
 document.getElementById('pumpMaxFlow').oninput = e=>{ state.pump.maxFlowLmin=parseFloat(e.target.value)||60; renderZones(); queueSave(); };
 document.getElementById('pumpMaxPressure').oninput = e=>{ state.pump.maxPressureBar=parseFloat(e.target.value)||4; queueSave(); };
 document.getElementById('pumpFlowSensor').onchange = e=>{ state.pump.flowSensorEntity=e.target.value; queueSave(); };
+document.getElementById('pumpValveDelay').oninput = e=>{ state.pump.valvePumpDelaySec=Math.max(0,parseFloat(e.target.value)||0); queueSave(); };
 
 /* ============================================================
    MANUAL CONTROL
@@ -1695,17 +1735,31 @@ async function setZone(zoneId, on){
   if(on) activeZones.add(zoneId); else activeZones.delete(zoneId);
   return true;
 }
+function hydraulicDelay(){ return sleep(Math.max(0,Number(state.pump.valvePumpDelaySec)||0)*1000); }
+async function startZonesSafely(zoneIds){
+  const ids=[...new Set(zoneIds)].filter(id=>zoneById(id)); if(!ids.length) return false;
+  for(const id of ids) if(!await setZone(id,true)) return false;
+  await hydraulicDelay();
+  if(!await setPump(true)){ for(const id of ids) await setZone(id,false); return false; }
+  return true;
+}
+async function stopZonesSafely(zoneIds){
+  const ids=[...new Set(zoneIds)].filter(id=>zoneById(id));
+  if(pumpOn) await setPump(false);
+  await hydraulicDelay();
+  for(const id of ids) await setZone(id,false);
+  return true;
+}
 async function startZoneManual(zoneId){
-  if(!pumpOn) await setPump(true);
-  await setZone(zoneId, true);
+  if(pumpOn && activeZones.size) await stopZonesSafely([...activeZones]);
+  await startZonesSafely([zoneId]);
   renderManualControl();
 }
 async function stopZoneManual(zoneId){
-  await setZone(zoneId, false);
-  if(activeZones.size===0) await setPump(false);
+  await stopZonesSafely([zoneId]);
   renderManualControl();
 }
-document.getElementById('btnPumpToggle').onclick = ()=> setPump(!pumpOn).then(renderManualControl);
+document.getElementById('btnPumpToggle').onclick = async()=>{ if(pumpOn) await stopZonesSafely([...activeZones]); else toast('Per sicurezza avvia la pompa dal comando di una zona.','err'); renderManualControl(); };
 function renderManualControl(){
   let totalFlow=0; activeZones.forEach(zid=> totalFlow+=zoneTotalFlow(zid));
   document.getElementById('totalFlowPill').textContent = 'Portata attiva: '+totalFlow.toFixed(1)+' l/min';
@@ -1763,25 +1817,24 @@ async function runTimerProgram(){
   const sequential = document.getElementById('timerSequential').checked;
   const targets = state.zones.filter(z=> (state.timers[z.id]??10) > 0);
   document.getElementById('timerStatusPill').textContent = 'In esecuzione…';
-  await setPump(true);
   if(sequential){
     for(const z of targets){
       if(timerAbort) break;
       document.getElementById('timerStatusPill').textContent = 'Zona attiva: '+z.name;
-      await setZone(z.id, true);
+      await startZonesSafely([z.id]);
       renderManualControl();
       const mins = state.timers[z.id]??10;
       for(let s=0;s<mins*60 && !timerAbort;s++) await sleep(1000);
-      await setZone(z.id, false);
+      await stopZonesSafely([z.id]);
     }
   } else {
-    for(const z of targets) await setZone(z.id, true);
+    await startZonesSafely(targets.map(z=>z.id));
     renderManualControl();
     const maxMin = Math.max(...targets.map(z=>state.timers[z.id]??10),0);
     for(let s=0;s<maxMin*60 && !timerAbort;s++) await sleep(1000);
-    for(const z of targets) await setZone(z.id, false);
+    await stopZonesSafely(targets.map(z=>z.id));
   }
-  await setPump(false);
+  if(pumpOn||activeZones.size) await stopZonesSafely([...activeZones]);
   timerRunning=false;
   document.getElementById('btnStartTimer').disabled=false;
   document.getElementById('btnStopTimer').disabled=true;
@@ -1794,8 +1847,7 @@ function stopTimerProgram(){
 document.getElementById('btnStartTimer').onclick = runTimerProgram;
 document.getElementById('btnStopTimer').onclick = async ()=>{
   stopTimerProgram();
-  for(const zid of [...activeZones]) await setZone(zid,false);
-  await setPump(false);
+  await stopZonesSafely([...activeZones]);
   renderManualControl();
 };
 
@@ -1884,12 +1936,23 @@ async function runAutoCheck(){
 document.getElementById('btnRunAutoCheck').onclick = runAutoCheck;
 
 function buildAutomationYaml(){
+  const safeDelay=Math.max(0,Number(state.pump.valvePumpDelaySec)||0);
   const zones = state.zones.map(z=>{
     const min = state.timers[z.id] ?? 10;
     return `      - service: switch.turn_on
         target:
           entity_id: ${z.relayEntity || 'switch.ZONA_DA_CONFIGURARE'}
+      - delay:
+          seconds: ${safeDelay}
+      - service: switch.turn_on
+        target:
+          entity_id: ${state.pump.relayEntity || 'switch.POMPA_DA_CONFIGURARE'}
       - delay: "00:${String(min).padStart(2,'0')}:00"
+      - service: switch.turn_off
+        target:
+          entity_id: ${state.pump.relayEntity || 'switch.POMPA_DA_CONFIGURARE'}
+      - delay:
+          seconds: ${safeDelay}
       - service: switch.turn_off
         target:
           entity_id: ${z.relayEntity || 'switch.ZONA_DA_CONFIGURARE'}`;
@@ -1908,14 +1971,8 @@ condition:
     attribute: precipitation_probability
     below: ${state.auto.rainThreshold}
 action:
-  - service: switch.turn_on
-    target:
-      entity_id: ${state.pump.relayEntity || 'switch.POMPA_DA_CONFIGURARE'}
   - sequence:
 ${zones || '      - service: switch.turn_on\n        target:\n          entity_id: switch.ZONA_DA_CONFIGURARE'}
-  - service: switch.turn_off
-    target:
-      entity_id: ${state.pump.relayEntity || 'switch.POMPA_DA_CONFIGURARE'}
 mode: single
 `;
 }
@@ -2401,8 +2458,7 @@ function renderHomeDashboard(){
 }
 
 async function stopEverything(){
-  for(const zid of [...activeZones]) await setZone(zid,false);
-  await setPump(false);
+  await stopZonesSafely([...activeZones]);
   stopTimerProgram();
   renderManualControl();
   renderHomeDashboard();
@@ -2448,6 +2504,10 @@ async function init(){
   document.getElementById('haToken').value = state.ha.token||'';
   document.getElementById('pumpMaxFlow').value = state.pump.maxFlowLmin;
   document.getElementById('pumpMaxPressure').value = state.pump.maxPressureBar;
+  document.getElementById('pumpValveDelay').value = state.pump.valvePumpDelaySec;
+  document.getElementById('plotWidthM').value = state.plot.widthM;
+  document.getElementById('plotHeightM').value = state.plot.heightM;
+  document.getElementById('rulerStepM').value = state.plot.rulerStepM;
   updateScaleHint();
   renderAutoDays();
   bindAutoFields();
