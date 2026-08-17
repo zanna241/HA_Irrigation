@@ -1,0 +1,22 @@
+[
+  {"id":"grass-cool","category":"Prato","name":"Prato microterme","scientific":"Lolium / Poa / Festuca","kc":0.8,"root_depth":0.2,"target_moisture":55,"source":"FAO-56 / UC ANR","confidence":"A"},
+  {"id":"grass-festuca","category":"Prato","name":"Festuca arundinacea","scientific":"Festuca arundinacea","kc":0.7,"root_depth":0.3,"target_moisture":50,"source":"FAO-56 / UC ANR","confidence":"B"},
+  {"id":"grass-bermuda","category":"Prato","name":"Gramigna / Bermuda","scientific":"Cynodon dactylon","kc":0.6,"root_depth":0.4,"target_moisture":45,"source":"FAO-56 / UC ANR","confidence":"A"},
+  {"id":"grass-zoysia","category":"Prato","name":"Zoysia","scientific":"Zoysia spp.","kc":0.55,"root_depth":0.35,"target_moisture":45,"source":"WUCOLS adattato","confidence":"B"},
+  {"id":"tomato","category":"Orto","name":"Pomodoro","scientific":"Solanum lycopersicum","kc":1.15,"root_depth":0.7,"target_moisture":60,"source":"FAO-56","confidence":"A"},
+  {"id":"pepper","category":"Orto","name":"Peperone","scientific":"Capsicum annuum","kc":1.05,"root_depth":0.6,"target_moisture":62,"source":"FAO-56","confidence":"A"},
+  {"id":"lettuce","category":"Orto","name":"Lattuga","scientific":"Lactuca sativa","kc":1.0,"root_depth":0.3,"target_moisture":65,"source":"FAO-56","confidence":"A"},
+  {"id":"potato","category":"Orto","name":"Patata","scientific":"Solanum tuberosum","kc":1.15,"root_depth":0.6,"target_moisture":60,"source":"FAO-56","confidence":"A"},
+  {"id":"zucchini","category":"Orto","name":"Zucchina","scientific":"Cucurbita pepo","kc":1.0,"root_depth":0.6,"target_moisture":60,"source":"FAO-56","confidence":"B"},
+  {"id":"basil","category":"Aromatica","name":"Basilico","scientific":"Ocimum basilicum","kc":0.9,"root_depth":0.3,"target_moisture":60,"source":"Profilo derivato","confidence":"C"},
+  {"id":"rosemary","category":"Aromatica","name":"Rosmarino","scientific":"Salvia rosmarinus","kc":0.3,"root_depth":0.6,"target_moisture":35,"source":"WUCOLS adattato","confidence":"B"},
+  {"id":"lavender","category":"Ornamentale","name":"Lavanda","scientific":"Lavandula spp.","kc":0.3,"root_depth":0.5,"target_moisture":35,"source":"WUCOLS adattato","confidence":"B"},
+  {"id":"hydrangea","category":"Ornamentale","name":"Ortensia","scientific":"Hydrangea macrophylla","kc":0.7,"root_depth":0.45,"target_moisture":60,"source":"WUCOLS adattato","confidence":"B"},
+  {"id":"rose","category":"Ornamentale","name":"Rosa","scientific":"Rosa spp.","kc":0.6,"root_depth":0.6,"target_moisture":50,"source":"WUCOLS adattato","confidence":"B"},
+  {"id":"olive","category":"Albero","name":"Olivo","scientific":"Olea europaea","kc":0.45,"root_depth":1.2,"target_moisture":35,"source":"FAO-56","confidence":"A"},
+  {"id":"apple","category":"Frutteto","name":"Melo","scientific":"Malus domestica","kc":0.9,"root_depth":1.0,"target_moisture":50,"source":"FAO-56","confidence":"A"},
+  {"id":"citrus","category":"Frutteto","name":"Agrumi","scientific":"Citrus spp.","kc":0.7,"root_depth":0.9,"target_moisture":55,"source":"FAO-56","confidence":"A"},
+  {"id":"grape","category":"Frutteto","name":"Vite","scientific":"Vitis vinifera","kc":0.7,"root_depth":1.2,"target_moisture":45,"source":"FAO-56","confidence":"A"},
+  {"id":"hedge-low","category":"Siepe","name":"Siepe mediterranea","scientific":"Specie miste xerofile","kc":0.35,"root_depth":0.7,"target_moisture":40,"source":"WUCOLS classe bassa","confidence":"C"},
+  {"id":"ornamental-medium","category":"Ornamentale","name":"Aiuola mista","scientific":"Specie miste","kc":0.55,"root_depth":0.4,"target_moisture":50,"source":"WUCOLS classe media","confidence":"C"}
+]

@@ -1,0 +1,5 @@
+{
+  "title": "IRRIGAZIONE SMART",
+  "config": {"step": {"user": {"title": "Configura IRRIGAZIONE SMART", "description": "Seleziona le entità principali. Le zone si configurano dal pannello IRRIGAZIONE SMART.", "data": {"pump_entity": "Pompa", "weather_entity": "Meteo", "rain_sensor": "Sensore pioggia (opzionale)"}}}, "abort": {"single_instance_allowed": "È consentita una sola istanza di IRRIGAZIONE SMART."}},
+  "options": {"step": {"init": {"title": "Entità principali", "data": {"pump_entity": "Pompa", "weather_entity": "Meteo", "rain_sensor": "Sensore pioggia"}}}}
+}

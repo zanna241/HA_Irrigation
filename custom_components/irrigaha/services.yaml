@@ -1,0 +1,20 @@
+recalculate:
+  name: Ricalcola fabbisogno
+  description: Rivaluta meteo, terreno e piano di tutte le zone.
+stop_all:
+  name: Arresto generale
+  description: Spegne prima la pompa e poi chiude tutte le valvole.
+start_zone:
+  name: Avvia zona
+  fields:
+    zone_id:
+      required: true
+      selector:
+        text:
+    minutes:
+      default: 10
+      selector:
+        number:
+          min: 0.1
+          max: 180
+          unit_of_measurement: min
