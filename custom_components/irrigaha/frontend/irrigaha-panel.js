@@ -158,7 +158,7 @@ a{color:var(--water);}
 .flow-bar{height:6px;border-radius:4px;background:var(--bg2);overflow:hidden;margin-top:6px;}
 .flow-bar>div{height:100%;background:linear-gradient(90deg,var(--water),var(--leaf));}
 .timer-list{display:flex;flex-direction:column;gap:8px;}
-.timer-row{display:grid;grid-template-columns:22px minmax(130px,1fr) 80px 105px minmax(250px,1.5fr);gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--border-soft);padding:10px;border-radius:8px;}
+.timer-row{display:grid;grid-template-columns:22px minmax(150px,1fr) minmax(145px,.8fr) minmax(135px,.7fr) minmax(280px,1.5fr);gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--border-soft);padding:10px;border-radius:8px;}
 .timer-days{display:flex;gap:4px;flex-wrap:wrap}.timer-days label{display:flex;align-items:center;gap:2px;margin:0;font-size:10px;text-transform:capitalize}.timer-days input{width:auto}
 .log-entry{border-left:3px solid var(--border);padding:6px 10px;font-size:12.5px;color:var(--text-dim);margin-bottom:6px;}
 .log-entry.skip{border-color:var(--warn);}
@@ -176,6 +176,8 @@ a{color:var(--water);}
 #screen-manage{display:none;}
 #screen-manage.active{display:block;}
 .home-topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
+.mz-logo-home{width:54px;height:54px;object-fit:contain;opacity:.9;filter:drop-shadow(0 4px 10px #0006)}
+.mz-logo-instructions{display:block;width:92px;height:92px;object-fit:contain;margin:18px auto 2px;opacity:.9}
 .home-hero{position:relative;border:1px solid var(--border-soft);border-radius:16px;overflow:hidden;height:min(58vh,520px);min-height:340px;background:#0a1512;}
 #homeScene3d{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none;}
 #homeScene3d:active{cursor:grabbing;}
@@ -241,6 +243,7 @@ a{color:var(--water);}
           <p>Sistema di irrigazione domotico</p>
         </div>
       </div>
+      <img class="mz-logo-home" src="/irrigaha_static/assets/mz-logo.png" alt="Logo MZ" title="MZ">
     </div>
 
     <div class="home-hero">
@@ -402,7 +405,11 @@ a{color:var(--water);}
             <label>Sensore portata reale (opzionale, l/min)</label>
             <select id="pumpFlowSensor"></select>
           </div>
-          <div class="field" style="max-width:360px;"><label>Ritardo sicurezza valvola ↔ pompa (secondi)</label><input type="number" id="pumpValveDelay" value="2" min="0" max="120" step="0.5"><div class="help">Avvio: zona, attesa, pompa. Arresto: pompa, attesa, zona.</div></div>
+          <div class="field-row3">
+            <div class="field"><label>Tempo massimo pompa (minuti)</label><input type="number" id="pumpMaxRuntime" value="120" min="1" max="1440" step="1"><div class="help">Limite obbligatorio applicato a qualsiasi avvio.</div></div>
+            <div class="field"><label>Ritardo sicurezza valvola ↔ pompa (secondi)</label><input type="number" id="pumpValveDelay" value="2" min="0" max="120" step="0.5"><div class="help">Avvio: zona, attesa, pompa. Arresto: pompa, attesa, zona.</div></div>
+            <div class="field"><label>Controlli opzionali</label><label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="pumpStopNoFlow" style="width:auto"> Arresta dopo 30 s senza portata</label><label style="display:flex;gap:7px;align-items:center;margin-top:9px"><input type="checkbox" id="pumpStopClosedValves" style="width:auto"> Arresta se tutte le valvole sono chiuse</label></div>
+          </div>
       </div>
 
       <div class="card">
@@ -609,6 +616,7 @@ a{color:var(--water);}
         </div>
         <p class="help">L'importazione <b>sostituisce interamente</b> la configurazione attuale con quella del file scelto, e la salva subito su Home Assistant.</p>
       </div>
+      <div class="card" style="grid-column:1/-1;text-align:center"><div class="small muted">Progetto e personalizzazione</div><img class="mz-logo-instructions" src="/irrigaha_static/assets/mz-logo.png" alt="Logo MZ"></div>
     </div>
   </div>
 
@@ -639,7 +647,7 @@ function bootApp(){
    chiaro quale build è effettivamente in esecuzione (utile per
    verificare che un aggiornamento dell'add-on sia andato a buon fine).
    ============================================================ */
-const APP_VERSION = '3.4.0';
+const APP_VERSION = '3.4.2';
 
 /* Bridge diretto con Home Assistant: il pannello è un elemento nativo nel
    DOM di HA (nessun iframe, nessun postMessage). `hass` è impostato dal
@@ -698,7 +706,7 @@ const DEFAULT_STATE = {
   decor: [],       // {id,x,y,kind('albero'|'siepe'|'cespuglio'|'pianta'),size,name}
   sensors: [],     // {id,x,y,kind,name,entityId}
   zones: [],       // include profilo vegetale e parametri agronomici
-  pump: {relayEntity:'', maxFlowLmin:60, maxPressureBar:4, flowSensorEntity:'', valvePumpDelaySec:2},
+  pump: {relayEntity:'', maxFlowLmin:60, maxPressureBar:4, flowSensorEntity:'', valvePumpDelaySec:2,maxRuntimeMinutes:120,stopOnNoFlow:false,stopWhenAllValvesClosed:false},
   timers: {},      // zoneId -> minutes
   manualSchedules: {}, // zoneId -> {enabled,minutes,startTime,days}
   auto: {enabled:false, weatherEntity:'', rainSensor:'', rainThreshold:60, startTime:'06:00',
@@ -2035,7 +2043,7 @@ function renderLegend(){
    ============================================================ */
 root.getElementById('btnAddZone').onclick = ()=>{
   const color = ZONE_COLORS[state.zones.length % ZONE_COLORS.length];
-  state.zones.push({id:uid(), name:'Zona '+(state.zones.length+1), color, relayEntity:'', pressureBar:3,plantProfileId:'grass-cool',areaM2:.1,areaAuto:true,irrigationEfficiency:.75,exposure:1,density:1,establishment:1});
+  state.zones.push({id:uid(), name:'Zona '+(state.zones.length+1), color, relayEntity:'', pressureBar:3,plantProfileId:'grass-cool',areaM2:.1,areaAuto:true,irrigationEfficiency:.75,exposure:1,density:1,establishment:1,maintenance:false});
   renderZones(); renderLegend(); queueSave();
 };
 function renderZones(){
@@ -2064,6 +2072,7 @@ function renderZones(){
         <span class="pill">${count} irrigatori</span>
         ${dripCount?`<span class="pill">${dripCount} tubi gocciolanti</span>`:''}
         ${over?'<span class="pill danger">⚠ portata &gt; pompa</span>':''}
+        ${z.maintenance?'<span class="pill danger">🛠 IN MANUTENZIONE</span>':''}
         <span class="spacer"></span>
         <button class="danger sm" data-zid="${z.id}" data-act="del">🗑</button>
       </div>
@@ -2085,6 +2094,7 @@ function renderZones(){
         <div class="field"><label>Efficienza impianto (%)</label><input type="number" min="20" max="100" data-zid="${z.id}" class="zEfficiency" value="${Math.round((z.irrigationEfficiency||.75)*100)}"></div>
       </div>
       <div class="field-row3"><div class="field"><label>Esposizione</label><select data-zid="${z.id}" class="zExposure"><option value="0.8" ${(z.exposure||1)==.8?'selected':''}>Ombra</option><option value="0.9" ${(z.exposure||1)==.9?'selected':''}>Mezz'ombra</option><option value="1" ${(z.exposure||1)==1?'selected':''}>Sole</option><option value="1.15" ${(z.exposure||1)==1.15?'selected':''}>Sole/caldo intenso</option></select></div><div class="field"><label>Densità vegetazione</label><select data-zid="${z.id}" class="zDensity"><option value="0.8" ${(z.density||1)==.8?'selected':''}>Bassa</option><option value="1" ${(z.density||1)==1?'selected':''}>Normale</option><option value="1.15" ${(z.density||1)==1.15?'selected':''}>Alta</option></select></div><div class="field"><label>Stato impianto</label><select data-zid="${z.id}" class="zEst"><option value="1" ${(z.establishment||1)==1?'selected':''}>Stabilizzato</option><option value="1.25" ${(z.establishment||1)==1.25?'selected':''}>Nuovo impianto</option></select></div></div>
+      <label style="display:flex;gap:8px;align-items:center;margin:10px 0;padding:10px;border:1px solid ${z.maintenance?'#e0645a88':'var(--border-soft)'};border-radius:8px;background:${z.maintenance?'#e0645a18':'var(--bg2)'}"><input type="checkbox" class="zMaintenance" data-zid="${z.id}" ${z.maintenance?'checked':''} style="width:auto"><span><b>Zona in manutenzione</b><span class="small muted" style="display:block">Inibisce qualsiasi avvio manuale, programmato, automatico o tramite servizio Home Assistant.</span></span></label>
       <div class="small muted">Portata stimata zona: ${flow.toFixed(1)} l/min di ${state.pump.maxFlowLmin} l/min pompa</div>
       <div class="small muted" style="margin-top:5px">Copertura unificata: ${coverage.areaM2.toFixed(1)} m² · Tubo: ${coverage.lineLengthM.toFixed(1)} m · Portata gocciolante: ${coverage.dripFlowLh.toFixed(0)} l/h</div>
       <div class="flow-bar"><div style="width:${pct}%;background:${over?'linear-gradient(90deg,#e0a83a,#e0645a)':''}"></div></div>
@@ -2102,6 +2112,7 @@ function renderZones(){
   wrap.querySelectorAll('.zExposure').forEach(el=>el.onchange=e=>{zoneById(e.target.dataset.zid).exposure=parseFloat(e.target.value);queueSave()});
   wrap.querySelectorAll('.zDensity').forEach(el=>el.onchange=e=>{zoneById(e.target.dataset.zid).density=parseFloat(e.target.value);queueSave()});
   wrap.querySelectorAll('.zEst').forEach(el=>el.onchange=e=>{zoneById(e.target.dataset.zid).establishment=parseFloat(e.target.value);queueSave()});
+  wrap.querySelectorAll('.zMaintenance').forEach(el=>el.onchange=async e=>{const z=zoneById(e.target.dataset.zid);z.maintenance=e.target.checked;renderZones();renderManualControl();renderTimer();await saveState();toast(z.maintenance?'Zona esclusa: manutenzione attiva':'Zona nuovamente disponibile',z.maintenance?'err':'ok')});
   wrap.querySelectorAll('[data-act=del]').forEach(btn=> btn.onclick = e=>{
     const zid = e.target.dataset.zid;
     if(!confirm('Eliminare questa zona? Gli irrigatori assegnati resteranno senza zona.')) return;
@@ -2119,6 +2130,9 @@ root.getElementById('pumpMaxFlow').oninput = e=>{ state.pump.maxFlowLmin=parseFl
 root.getElementById('pumpMaxPressure').oninput = e=>{ state.pump.maxPressureBar=parseFloat(e.target.value)||4; queueSave(); };
 root.getElementById('pumpFlowSensor').onchange = e=>{ state.pump.flowSensorEntity=e.target.value; queueSave(); };
 root.getElementById('pumpValveDelay').oninput = e=>{ state.pump.valvePumpDelaySec=Math.max(0,parseFloat(e.target.value)||0); queueSave(); };
+root.getElementById('pumpMaxRuntime').oninput = e=>{ state.pump.maxRuntimeMinutes=Math.max(1,parseFloat(e.target.value)||120); queueSave(); };
+root.getElementById('pumpStopNoFlow').onchange = e=>{ state.pump.stopOnNoFlow=e.target.checked; queueSave(); };
+root.getElementById('pumpStopClosedValves').onchange = e=>{ state.pump.stopWhenAllValvesClosed=e.target.checked; queueSave(); };
 
 /* ============================================================
    MANUAL CONTROL
@@ -2188,10 +2202,10 @@ function renderManualControl(){
     return `<div class="card">
       <div class="row"><span class="swatch" style="background:${z.color};width:12px;height:12px;border-radius:3px;"></span>
         <b>${escapeHtml(z.name)}</b><span class="spacer"></span>
-        <span class="pill ${on?'leaf':''}">${on?'ATTIVA':'ferma'}</span>
+        <span class="pill ${on?'leaf':z.maintenance?'danger':''}">${on?'ATTIVA':z.maintenance?'MANUTENZIONE':'ferma'}</span>
       </div>
       <div class="small muted" style="margin:6px 0;">${flow.toFixed(1)} l/min stimati</div>
-      <button class="${on?'danger':'primary'}" style="width:100%;" data-zid="${z.id}" data-act="${on?'stop':'start'}">${on?'■ Ferma zona':'▶ Avvia zona'}</button>
+      <button class="${on?'danger':'primary'}" style="width:100%;" data-zid="${z.id}" data-act="${on?'stop':'start'}" ${z.maintenance&&!on?'disabled':''}>${on?'■ Ferma zona':z.maintenance?'🛠 Zona in manutenzione':'▶ Avvia zona'}</button>
     </div>`;
   }).join('');
   grid.querySelectorAll('button').forEach(btn=>{
@@ -2213,10 +2227,10 @@ function renderTimer(){
     const schedule=state.manualSchedules[z.id]||{enabled:false,minutes:min,startTime:'06:00',days:{lun:true,mar:true,mer:true,gio:true,ven:true,sab:true,dom:true}};
     return `<div class="timer-row">
       <span class="swatch" style="background:${z.color};width:12px;height:12px;border-radius:3px;"></span>
-      <div><b>${escapeHtml(z.name)}</b><label style="margin-top:5px;display:flex;align-items:center;gap:5px"><input type="checkbox" class="tEnabled" data-zid="${z.id}" ${schedule.enabled?'checked':''} style="width:auto"> Programmazione attiva</label></div>
-      <div class="field" style="margin:0"><label>Durata (minuti)</label><input type="number" min="1" max="180" value="${min}" data-zid="${z.id}" class="tMin"></div>
-      <input class="tTime timer-time" type="time" value="${schedule.startTime||'06:00'}" data-zid="${z.id}">
-      <div class="timer-days">${DAY_KEYS.map(d=>`<label><input type="checkbox" class="tDay" data-zid="${z.id}" data-day="${d}" ${schedule.days?.[d]!==false?'checked':''}>${d}</label>`).join('')}</div>
+      <div><b>${escapeHtml(z.name)}</b>${z.maintenance?'<div class="pill danger" style="margin-top:5px">🛠 Manutenzione</div>':`<label style="margin-top:5px;display:flex;align-items:center;gap:5px"><input type="checkbox" class="tEnabled" data-zid="${z.id}" ${schedule.enabled?'checked':''} style="width:auto"> Programmazione attiva</label>`}</div>
+      <div class="field" style="margin:0"><label>Durata della zona</label><input type="number" min="1" max="180" value="${min}" data-zid="${z.id}" class="tMin" ${z.maintenance?'disabled':''}><div class="small muted">Minuti di irrigazione a ogni avvio.</div></div>
+      <div class="field" style="margin:0"><label>Ora di avvio</label><input class="tTime timer-time" type="time" value="${schedule.startTime||'06:00'}" data-zid="${z.id}" ${z.maintenance?'disabled':''}></div>
+      <div class="field" style="margin:0"><label>Giorni attivi</label><div class="timer-days">${DAY_KEYS.map(d=>`<label><input type="checkbox" class="tDay" data-zid="${z.id}" data-day="${d}" ${schedule.days?.[d]!==false?'checked':''} ${z.maintenance?'disabled':''}>${d}</label>`).join('')}</div><div class="small muted">Seleziona i giorni in cui questa zona può partire.</div></div>
     </div>`;
   }).join('');
   wrap.querySelectorAll('.tMin').forEach(inp=> inp.oninput = e=>{
@@ -2236,7 +2250,7 @@ async function runTimerProgram(){
   timerRunning=true; timerAbort=false;
   root.getElementById('btnStartTimer').disabled=true;
   root.getElementById('btnStopTimer').disabled=false;
-  const targets = state.zones.filter(z=> (state.timers[z.id]??10) > 0);
+  const targets = state.zones.filter(z=> !z.maintenance && (state.timers[z.id]??10) > 0);
   root.getElementById('timerStatusPill').textContent = 'In esecuzione…';
   for(const z of targets){
     if(timerAbort)break;
@@ -2709,6 +2723,7 @@ function resize3D(){
   renderer3D.setSize(w,h,false);
   camera3D.aspect = w/h;
   camera3D.updateProjectionMatrix();
+  camera3DFramed=false;
   return true;
 }
 window.addEventListener('resize', ()=> resize3D());
@@ -2719,13 +2734,18 @@ function center3DView(){
   const valid=box&&!box.isEmpty();
   const center=valid?box.getCenter(new THREE.Vector3()):new THREE.Vector3(0,0,0);
   const size=valid?box.getSize(new THREE.Vector3()):new THREE.Vector3(8,1,8);
-  const span=Math.max(4,size.x,size.z,size.y*2);
-  const fov=THREE.MathUtils.degToRad(camera3D.fov);
-  const distance=Math.max(7,(span/2)/Math.tan(fov/2)*1.35);
+  const radius=Math.max(2,size.length()/2);
+  const verticalFov=THREE.MathUtils.degToRad(camera3D.fov);
+  const horizontalFov=2*Math.atan(Math.tan(verticalFov/2)*Math.max(.1,camera3D.aspect));
+  const limitingFov=Math.min(verticalFov,horizontalFov);
+  const homeView=current3DContainer?.id==='homeScene3d';
+  const fitMargin=homeView ? 0.84 : 1.06;
+  const distance=Math.max(5,radius/Math.sin(limitingFov/2)*fitMargin);
   controls3D.minDistance=Math.max(1,distance*.12);
   controls3D.maxDistance=Math.max(140,distance*8);
   controls3D.target.copy(center);controls3D.target.y=Math.max(0,center.y*.35);
-  camera3D.position.set(center.x+distance*.82,Math.max(5,distance*.72),center.z+distance*.82);
+  const direction=new THREE.Vector3(1,.78,1).normalize();
+  camera3D.position.copy(center).addScaledVector(direction,distance);
   camera3D.near=Math.max(.02,distance/1000);camera3D.far=Math.max(300,distance*20);
   camera3D.updateProjectionMatrix();controls3D.update();camera3DFramed=true;resize3D();
 }
@@ -3056,7 +3076,7 @@ const WEATHER_ICONS = {
   'lightning':'⛈️','lightning-rainy':'⛈️','partlycloudy':'⛅','pouring':'🌧️',
   'rainy':'🌧️','snowy':'❄️','snowy-rainy':'🌨️','sunny':'☀️','windy':'💨','windy-variant':'💨'
 };
-const OP_EVENT_LABELS={zone_start_requested:'Richiesta avvio zona',zone_valve_on:'Valvola zona aperta',pump_on:'Pompa avviata',pump_off:'Pompa arrestata',zone_valve_off:'Valvola zona chiusa',zone_cycle_complete:'Ciclo zona completato',pump_off_emergency:'Arresto pompa',zone_valve_off_emergency:'Chiusura valvola di sicurezza'};
+const OP_EVENT_LABELS={zone_start_requested:'Richiesta avvio zona',zone_start_blocked_maintenance:'Avvio bloccato: zona in manutenzione',zone_valve_on:'Valvola zona aperta',pump_on:'Pompa avviata',pump_off:'Pompa arrestata',zone_valve_off:'Valvola zona chiusa',zone_cycle_complete:'Ciclo zona completato',pump_safety_stop:'Arresto automatico di sicurezza',pump_off_emergency:'Arresto pompa',zone_valve_off_emergency:'Chiusura valvola di sicurezza'};
 function logTime(item){const d=new Date(item.timestamp||item.ts||0);return Number.isNaN(d.getTime())?null:d;}
 function operationLogTable(items){
   if(!items.length)return '<div class="empty">Nessuna operazione nel periodo selezionato.</div>';
@@ -3144,9 +3164,9 @@ function renderHomeDashboard(){
     ? '<div class="empty">Nessuna zona configurata ancora.</div>'
     : state.zones.map(z=>{
         const on = activeZones.has(z.id);
-        return `<button class="zone-quick-btn ${on?'on':''}" data-zid="${z.id}" data-act="${on?'stop':'start'}">
+        return `<button class="zone-quick-btn ${on?'on':''}" data-zid="${z.id}" data-act="${on?'stop':'start'}" ${z.maintenance&&!on?'disabled':''}>
           <span class="zq-name">${escapeHtml(z.name)}</span>
-          <span class="zq-state">${on?'● attiva':'ferma'} · ${zoneTotalFlow(z.id).toFixed(1)} l/min</span>
+          <span class="zq-state">${on?'● attiva':z.maintenance?'🛠 manutenzione':'ferma'} · ${zoneTotalFlow(z.id).toFixed(1)} l/min</span>
         </button>`;
       }).join('');
   quick.querySelectorAll('button').forEach(btn=>{
@@ -3228,6 +3248,9 @@ async function init(){
   root.getElementById('pumpMaxFlow').value = state.pump.maxFlowLmin;
   root.getElementById('pumpMaxPressure').value = state.pump.maxPressureBar;
   root.getElementById('pumpValveDelay').value = state.pump.valvePumpDelaySec;
+  root.getElementById('pumpMaxRuntime').value = state.pump.maxRuntimeMinutes;
+  root.getElementById('pumpStopNoFlow').checked = !!state.pump.stopOnNoFlow;
+  root.getElementById('pumpStopClosedValves').checked = !!state.pump.stopWhenAllValvesClosed;
   root.getElementById('plotWidthM').value = state.plot.widthM;
   root.getElementById('plotHeightM').value = state.plot.heightM;
   root.getElementById('rulerStepM').value = state.plot.rulerStepM;

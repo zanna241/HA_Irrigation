@@ -1,5 +1,36 @@
 # Changelog
 
+## 3.4.2 — 2026-08-17
+
+### Aggiunto
+
+- Stato persistente **Zona in manutenzione**.
+- Blocco degli avvii manuali, immediati, settimanali, automatici e tramite servizio HA per le zone escluse.
+- Arresto controllato entro il ciclo di sorveglianza se la manutenzione viene attivata durante l'irrigazione.
+- Evento di log per i tentativi di avvio bloccati dalla manutenzione.
+- Logo MZ ottimizzato e incorporato nella Home e nelle istruzioni.
+- Descrizioni di durata, ora di avvio e selezione dei giorni in Prog. Manuale.
+
+### Modificato
+
+- Fit iniziale della Home 3D portato a `0,84`, circa il 19% più ravvicinato.
+- Il piano automatico indica le zone in manutenzione come bloccate e assegna durata e litri pari a zero.
+
+## 3.4.1 — 2026-08-17
+
+### Aggiunto
+
+- Limite massimo configurabile del funzionamento continuativo della pompa.
+- Watchdog opzionale di portata zero: arresto dopo 30 secondi sotto 0,05 l/min o con sensore non disponibile.
+- Watchdog opzionale per tutte le valvole configurate in stato `off`.
+- Evento persistente `pump_safety_stop` con causa, durata e litri erogati.
+
+### Modificato
+
+- Il limite pompa viene imposto dal controller backend a comandi manuali, programmi, automatismi e servizi.
+- La camera 3D calcola il fit usando FOV verticale, FOV orizzontale e proporzioni reali del contenitore.
+- La scena viene nuovamente adattata quando cambia la dimensione della finestra.
+
 ## 3.4.0 — 2026-08-17
 
 ### Aggiunto

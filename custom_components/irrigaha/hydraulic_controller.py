@@ -38,13 +38,22 @@ class HydraulicController:
 
     async def async_run_zone(self, zone, minutes, source="automatic"):
         async with self.lock:
+            current_zone = next((item for item in self.store.data.get("zones", []) if item.get("id") == zone.get("id")), zone)
+            if current_zone.get("maintenance"):
+                self._log("zone_start_blocked_maintenance", zone=current_zone, source=source, detail="Zona esclusa perché impostata in manutenzione")
+                await self.store.async_save()
+                raise RuntimeError("Zona in manutenzione: irrigazione inibita")
             self.abort.clear(); self.running = True; self.active_zone = zone["id"]
             delay = max(0, float(self.store.data.get("valve_pump_delay", 2)))
             pump = self.store.data.get("pump_entity", "")
             started = datetime.now().astimezone()
             pumping_started = started; measured_liters = 0.0; has_measurement = False
+            requested_minutes = max(0.0, float(minutes))
+            maximum_minutes = max(1.0, float(self.store.data.get("max_pump_runtime_minutes", 120) or 120))
+            effective_minutes = min(requested_minutes, maximum_minutes)
+            safety_reason = None; no_flow_seconds = 0.0; deadline_reached = False
             self.active_flow_l_min = float(zone.get("flow_l_min", 0) or 0)
-            self._log("zone_start_requested", zone=zone, source=source, detail=f"Durata richiesta: {float(minutes):.2f} min")
+            self._log("zone_start_requested", zone=zone, source=source, detail=f"Durata richiesta: {requested_minutes:.2f} min; limite pompa: {maximum_minutes:.2f} min")
             await self.store.async_save()
             try:
                 await self._switch(zone.get("valve_entity", ""), True)
@@ -56,11 +65,11 @@ class HydraulicController:
                 pumping_started = datetime.now().astimezone()
                 self.active_started_at = pumping_started.isoformat()
                 await self.store.async_save()
-                deadline = asyncio.get_running_loop().time() + max(0, float(minutes)) * 60
+                deadline = asyncio.get_running_loop().time() + effective_minutes * 60
                 previous = asyncio.get_running_loop().time()
                 while not self.abort.is_set():
                     remaining = deadline - asyncio.get_running_loop().time()
-                    if remaining <= 0: break
+                    if remaining <= 0: deadline_reached = True; break
                     try: await asyncio.wait_for(self.abort.wait(), timeout=min(1.0, remaining))
                     except TimeoutError: pass
                     now_mono = asyncio.get_running_loop().time(); delta = max(0, now_mono - previous); previous = now_mono
@@ -70,6 +79,20 @@ class HydraulicController:
                     except (TypeError, ValueError): flow = None
                     if flow is not None and flow >= 0:
                         self.active_flow_l_min = flow; measured_liters += flow * delta / 60; has_measurement = True
+                        no_flow_seconds = no_flow_seconds + delta if flow < 0.05 else 0.0
+                    elif self.store.data.get("stop_on_no_flow") and sensor_id:
+                        no_flow_seconds += delta
+                    if self.store.data.get("stop_on_no_flow") and sensor_id and no_flow_seconds >= 30:
+                        safety_reason = "no_flow"; break
+                    if self.store.data.get("stop_when_all_valves_closed") and (now_mono - (deadline - effective_minutes * 60)) >= 5:
+                        valves = [item.get("valve_entity") for item in self.store.data.get("zones", []) if item.get("valve_entity")]
+                        if valves and all(self.hass.states.is_state(entity_id, "off") for entity_id in valves):
+                            safety_reason = "all_valves_closed"; break
+                    current_zone = next((item for item in self.store.data.get("zones", []) if item.get("id") == zone.get("id")), zone)
+                    if current_zone.get("maintenance"):
+                        safety_reason = "maintenance"; break
+                if safety_reason is None and deadline_reached and requested_minutes > maximum_minutes:
+                    safety_reason = "max_runtime"
             finally:
                 try:
                     await self._switch(pump, False)
@@ -79,8 +102,16 @@ class HydraulicController:
                     await self._switch(zone.get("valve_entity", ""), False)
                     self._log("zone_valve_off", zone=zone, source=source)
                 elapsed = max(0, (datetime.now().astimezone() - pumping_started).total_seconds() / 60)
-                liters = measured_liters if has_measurement else elapsed * float(zone.get("flow_l_min", 0))
+                liters = measured_liters if has_measurement or safety_reason == "no_flow" else elapsed * float(zone.get("flow_l_min", 0))
                 self.store.data["water_ledger"].append({"timestamp": datetime.now().astimezone().isoformat(), "zone_id": zone["id"], "minutes": round(elapsed, 2), "liters": round(liters, 1), "source": source})
+                if safety_reason:
+                    details = {
+                        "max_runtime": f"Raggiunto il limite massimo di {maximum_minutes:.2f} minuti",
+                        "no_flow": "Portata inferiore a 0,05 l/min per 30 secondi",
+                        "all_valves_closed": "Tutte le valvole configurate risultano chiuse",
+                        "maintenance": "Zona impostata in manutenzione durante l'irrigazione",
+                    }
+                    self._log("pump_safety_stop", zone=zone, source=source, liters=liters, minutes=elapsed, detail=details[safety_reason])
                 self._log("zone_cycle_complete", zone=zone, source=source, liters=liters, minutes=elapsed)
                 self.store.data["last_irrigation"][zone["id"]] = datetime.now().astimezone().isoformat()
                 self.running = False; self.active_zone = None

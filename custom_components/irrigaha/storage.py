@@ -56,6 +56,7 @@ class IrrigationSmartStore:
                 "id": zone.get("id"), "name": zone.get("name", "Zona"),
                 "valve_entity": zone.get("relayEntity", ""), "pressure_bar": zone.get("pressureBar", 3),
                 "plant_profile_id": zone.get("plantProfileId", "grass-cool"),
+                "maintenance": bool(zone.get("maintenance", False)),
                 "area_m2": zone.get("areaM2", 50), "efficiency": zone.get("irrigationEfficiency", .75),
                 "exposure": zone.get("exposure", 1), "density": zone.get("density", 1),
                 "establishment": zone.get("establishment", 1),
@@ -66,6 +67,9 @@ class IrrigationSmartStore:
             "enabled": old.get("auto", {}).get("enabled", False),
             "pump_entity": old.get("pump", {}).get("relayEntity", ""),
             "flow_sensor": old.get("pump", {}).get("flowSensorEntity", ""),
+            "max_pump_runtime_minutes": max(1, float(old.get("pump", {}).get("maxRuntimeMinutes", 120) or 120)),
+            "stop_on_no_flow": bool(old.get("pump", {}).get("stopOnNoFlow", False)),
+            "stop_when_all_valves_closed": bool(old.get("pump", {}).get("stopWhenAllValvesClosed", False)),
             "weather_entity": old.get("auto", {}).get("weatherEntity", ""),
             "rain_sensor": old.get("auto", {}).get("rainSensor", ""),
             "check_times": old.get("auto", {}).get("checkTimes", ["05:00", "14:00", "21:00"]),
@@ -115,6 +119,9 @@ class IrrigationSmartStore:
         old.setdefault("pump", {})
         old["pump"].setdefault("relayEntity", self.data.get("pump_entity", ""))
         old["pump"].setdefault("flowSensorEntity", self.data.get("flow_sensor", ""))
+        old["pump"].setdefault("maxRuntimeMinutes", self.data.get("max_pump_runtime_minutes", 120))
+        old["pump"].setdefault("stopOnNoFlow", self.data.get("stop_on_no_flow", False))
+        old["pump"].setdefault("stopWhenAllValvesClosed", self.data.get("stop_when_all_valves_closed", False))
         old["pump"].setdefault("valvePumpDelaySec", self.data.get("valve_pump_delay", 2))
         old.setdefault("auto", {})
         old["auto"].setdefault("enabled", self.data.get("enabled", True))
@@ -184,6 +191,7 @@ def _legacy_zone(zone):
         "id": zone.get("id"), "name": zone.get("name", "Zona"),
         "relayEntity": zone.get("valve_entity", ""), "pressureBar": zone.get("pressure_bar", 3),
         "plantProfileId": zone.get("plant_profile_id", "grass-cool"),
+        "maintenance": bool(zone.get("maintenance", False)),
         "areaM2": zone.get("area_m2", 50), "irrigationEfficiency": zone.get("efficiency", .75),
         "exposure": zone.get("exposure", 1), "density": zone.get("density", 1),
         "establishment": zone.get("establishment", 1),

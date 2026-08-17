@@ -55,7 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
     }
 
     if not hass.data[DOMAIN].get("panel_registered"):
-        await panel_custom.async_register_panel(hass, webcomponent_name="irrigaha-panel", frontend_url_path="irrigaha", module_url="/irrigaha_static/irrigaha-panel.js?v=3.4.0", sidebar_title="IRRIGAZIONE SMART", sidebar_icon="mdi:sprinkler-variant", require_admin=False, config={"entry_id": entry.entry_id})
+        await panel_custom.async_register_panel(hass, webcomponent_name="irrigaha-panel", frontend_url_path="irrigaha", module_url="/irrigaha_static/irrigaha-panel.js?v=3.4.2", sidebar_title="IRRIGAZIONE SMART", sidebar_icon="mdi:sprinkler-variant", require_admin=False, config={"entry_id": entry.entry_id})
         hass.data[DOMAIN]["panel_registered"] = True
     async_register_websocket(hass)
 

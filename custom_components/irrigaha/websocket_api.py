@@ -117,6 +117,8 @@ async def ws_start_zone(hass, connection, msg):
     zone = next((item for item in rt["store"].data.get("zones", []) if item.get("id") == msg["zone_id"]), None)
     if not zone:
         connection.send_error(msg["id"], "zone_not_found", "Zona non trovata"); return
+    if zone.get("maintenance"):
+        connection.send_error(msg["id"], "zone_in_maintenance", "Zona in manutenzione: irrigazione inibita"); return
     try:
         rt["controller"].start_background(zone, max(.01, msg["minutes"]), msg["source"])
     except RuntimeError as err:

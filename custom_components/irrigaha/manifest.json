@@ -1,7 +1,7 @@
 {
   "domain": "irrigaha",
   "name": "IRRIGAZIONE SMART",
-  "version": "3.4.0",
+  "version": "3.4.2",
   "documentation": "https://github.com/zanna241/HA_Irrigation",
   "issue_tracker": "https://github.com/zanna241/HA_Irrigation/issues",
   "config_flow": true,

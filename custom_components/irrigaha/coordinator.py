@@ -55,7 +55,7 @@ class IrrigationSmartCoordinator(DataUpdateCoordinator):
         if now.isoweekday() not in schedule.get("weekdays", []):
             return
         zone = next((item for item in self.store.data.get("zones", []) if item.get("id") == schedule.get("zone_id")), None)
-        if zone:
+        if zone and not zone.get("maintenance"):
             await self.controller.async_run_zone(zone, max(1, float(schedule.get("minutes", 10))), "scheduled_manual")
             self.async_set_updated_data(self._snapshot())
 
@@ -85,7 +85,9 @@ class IrrigationSmartCoordinator(DataUpdateCoordinator):
             try: soil = float(soil_state.state) if soil_state else None
             except (TypeError, ValueError): soil = None
             plan = calculate_zone(zone, plant, eto, self.store.data.get("effective_rain_mm", 0), soil)
-            if raining or rain_probability >= self.store.data.get("rain_probability_threshold", 60):
+            if zone.get("maintenance"):
+                plan.update({"minutes": 0, "liters": 0, "net_mm": 0, "blocked_reason": "maintenance"})
+            elif raining or rain_probability >= self.store.data.get("rain_probability_threshold", 60):
                 plan.update({"minutes": 0, "liters": 0, "net_mm": 0, "blocked_reason": "rain"})
             plans[zone["id"]] = plan
         self.store.data["plans"] = plans
@@ -122,7 +124,7 @@ class IrrigationSmartCoordinator(DataUpdateCoordinator):
         for zone in self.store.data.get("zones", []):
             plan = self.store.data.get("plans", {}).get(zone["id"], {})
             last = self.store.data.get("last_irrigation", {}).get(zone["id"], "")
-            if plan.get("minutes", 0) > 0 and not last.startswith(today):
+            if not zone.get("maintenance") and plan.get("minutes", 0) > 0 and not last.startswith(today):
                 await self.controller.async_run_zone(zone, plan["minutes"], "automatic")
                 self.async_set_updated_data(self._snapshot())
 
